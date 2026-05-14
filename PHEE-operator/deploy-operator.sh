@@ -35,7 +35,7 @@ deploy_operator() {
 
     # 1. Pre-requisites Check
     echo -e "${BLUE}Checking pre-requisites...${NC}"
-    Check if kubectl, docker, mvn, and helm are installed
+    # Check if kubectl, docker, and helm are installed
     if ! command -v kubectl &> /dev/null || ! command -v docker &> /dev/null || ! command -v helm &> /dev/null
     then
         echo -e "${RED}kubectl, docker, and helm are required but not installed. Exiting.${NC}"
@@ -53,16 +53,6 @@ deploy_operator() {
         echo -e "${GREEN}Java is already installed.${NC}"
     fi
 
-    # Check if Maven is installed, if not, install it
-    if ! command -v mvn &> /dev/null
-    then
-        echo -e "${YELLOW}Maven is not installed. Installing Maven...${NC}"
-        sudo apt-get install maven -y || { echo -e "${RED}Failed to install Maven. Exiting.${NC}"; exit 1; }
-        echo -e "${GREEN}Maven installed successfully.${NC}"
-    else
-        echo -e "${GREEN}Maven is already installed.${NC}"
-    fi
-
     echo -e "${GREEN}Pre-requisites are met.${NC}"
 
     # 2. Upgrading the current helm chart deployment
@@ -70,22 +60,17 @@ deploy_operator() {
     helm upgrade $RELEASE_NAME $HELM_CHART_PATH -n $HELM_NAMESPACE -f $VALUES_FILE || { echo -e "${RED}Helm upgrade failed. Exiting.${NC}"; exit 1; }
     echo -e "${GREEN}Helm chart upgrade successful.${NC}"
 
-    # 3. Build the Java Project
-    echo -e "${BLUE}Building the Java project...${NC}"
-    mvn clean package || { echo -e "${RED}Maven build failed. Exiting.${NC}"; exit 1; }
-    echo -e "${GREEN}Java project build successful.${NC}"
-
-    # 4. Build the Docker Image Locally
-    echo -e "${BLUE}Building the Docker image locally...${NC}"
-    docker build -t $IMAGE_NAME:$IMAGE_TAG . || { echo -e "${RED}Docker image build failed. Exiting.${NC}"; exit 1; }
+    # 3. Build and package the Docker image locally via JIB (no separate docker build step needed)
+    echo -e "${BLUE}Building Docker image locally via JIB...${NC}"
+    ./gradlew jibDockerBuild || { echo -e "${RED}JIB Docker build failed. Exiting.${NC}"; exit 1; }
     echo -e "${GREEN}Docker image build successful.${NC}"
 
-    # 5. Save the Docker Image to a TAR File
+    # 4. Save the Docker Image to a TAR File
     echo -e "${BLUE}Saving the Docker image to a TAR file...${NC}"
     docker save $IMAGE_NAME:$IMAGE_TAG -o $IMAGE_NAME.tar || { echo -e "${RED}Docker save failed. Exiting.${NC}"; exit 1; }
     echo -e "${GREEN}Docker image saved to TAR file.${NC}"
 
-    # 6. Import the Docker Image into k3s Cluster
+    # 5. Import the Docker Image into k3s Cluster
     echo -e "${BLUE}Importing the Docker image into the k3s cluster...${NC}"
     sudo k3s ctr images import $IMAGE_NAME.tar || { echo -e "${RED}Image import to k3s failed. Exiting.${NC}"; exit 1; }
     echo -e "${GREEN}Docker image successfully imported to k3s.${NC}"

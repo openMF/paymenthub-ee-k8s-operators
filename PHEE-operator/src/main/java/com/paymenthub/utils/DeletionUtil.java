@@ -153,8 +153,7 @@ public class DeletionUtil {
      */
     public static void deleteIngressResources(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String namespace = resource.getMetadata().getNamespace();
-        String name = resource.getMetadata().getName();
-        String ingressName = name + "-ingress";
+        String ingressName = resource.getMetadata().getName();
 
         // Delete Ingress
         if (kubernetesClient.network().v1().ingresses().inNamespace(namespace).withName(ingressName).get() != null) {

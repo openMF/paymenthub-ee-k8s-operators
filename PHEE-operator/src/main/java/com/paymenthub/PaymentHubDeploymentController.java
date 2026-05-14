@@ -27,14 +27,11 @@ import com.paymenthub.utils.DeletionUtil;
 import com.paymenthub.utils.DeploymentUtils;  
 import com.paymenthub.utils.RbacUtils;  
 import com.paymenthub.utils.ResourceUtils;  
-import com.paymenthub.utils.NetworkingUtils;  
-import com.paymenthub.utils.OwnerReferenceUtils;  
- 
+import com.paymenthub.utils.NetworkingUtils;
+import com.paymenthub.utils.OwnerReferenceUtils;
 
 // Java utils
-import java.time.Instant;  
-import java.util.*;  
-import java.util.stream.Collectors;  
+import java.util.*;
 
 
 
@@ -128,22 +125,19 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
                 resourceUtils.reconcileConfigmap(resource);
             }
 
-            // Check and reconcile Ingress and Services
+            // Always reconcile Services when enabled
+            networkingUtils.reconcileServices(resource);
+
+            // Reconcile Ingress conditionally (gsma never gets an Ingress)
             if ("ph-ee-connector-gsma".equals(resourceName)) {
-                // Special case: only reconcile Services, not Ingress, for "ph-ee-connector-gsma"
-                log.info("Special case for {}: Reconciling Services only, not Ingress.", resourceName);
-                networkingUtils.reconcileServices(resource);
+                log.info("Special case for {}: Services only, no Ingress.", resourceName);
+                DeletionUtil.deleteIngressResources(kubernetesClient, resource);
+            } else if (resource.getSpec().getIngressEnabled() == null || !resource.getSpec().getIngressEnabled()) {
+                log.info("Ingress for resource {} is disabled, deleting Ingress if present.", resourceName);
+                DeletionUtil.deleteIngressResources(kubernetesClient, resource);
             } else {
-                if (resource.getSpec().getIngressEnabled() == null || !resource.getSpec().getIngressEnabled()) {
-                    log.info("Ingress for resource {} is disabled, deleting associated Ingress resources.", resourceName);
-                    DeletionUtil.deleteIngressResources(kubernetesClient, resource);
-                    DeletionUtil.deleteService(kubernetesClient, resource);
-                } else {
-                    // INFO level log to indicate Ingress and Service reconciliation
-                    log.info("Reconciling Ingress and Service for {}.", resourceName);
-                    networkingUtils.reconcileServices(resource);
-                    networkingUtils.reconcileIngress(resource);
-                }
+                log.info("Reconciling Ingress for {}.", resourceName);
+                networkingUtils.reconcileIngress(resource);
             }
 
             // Always reconcile the Deployment itself
@@ -195,14 +189,18 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
     private Deployment createDeployment(PaymentHubDeployment resource) {
         log.info("Creating Deployment spec for resource: {}", resource.getMetadata().getName());
 
-        // Define labels for the Deployment and Pod templates
+        // Full label set for Deployment metadata and pod template
         Map<String, String> labels = resource.getSpec().getLabels();
         if (labels == null) {
             labels = new HashMap<>();
         }
-
         labels.putIfAbsent("app", resource.getMetadata().getName());
         labels.putIfAbsent("app.kubernetes.io/managed-by", "ph-ee-operator");
+
+        // Selector uses only the stable "app" label — never include managed-by here,
+        // as spec.selector is immutable and adding it breaks Helm-pre-created Deployments.
+        Map<String, String> selectorLabels = new HashMap<>();
+        selectorLabels.put("app", resource.getMetadata().getName());
 
         // Build the main container with environment variables, resources, and volume mounts
         ContainerBuilder containerBuilder = new ContainerBuilder()
@@ -236,21 +234,39 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
 
                 // Check the deployment name and set the appropriate path
                 if ("ph-ee-operations-web".equals(deploymentName)) {
-                    // For ph-ee-operations-web, use the specific path and subPath
-                    volumeMountBuilder
-                        .withMountPath("/usr/share/nginx/html/assets/configuration.properties")
-                        .withSubPath("configuration.properties");
+                    // Mount app config and the nginx default.conf override (same ConfigMap,
+                    // two subPaths). The nginx override suppresses aio/io_setup which is
+                    // unavailable on Colima/macOS kernels.
+                    containerBuilder.withVolumeMounts(
+                        new VolumeMountBuilder()
+                            .withName(volMountName)
+                            .withMountPath("/usr/share/nginx/html/assets/configuration.properties")
+                            .withSubPath("configuration.properties")
+                            .build(),
+                        new VolumeMountBuilder()
+                            .withName(volMountName)
+                            .withMountPath("/etc/nginx/conf.d/default.conf")
+                            .withSubPath("default.conf")
+                            .build()
+                    );
                 } else {
-                    // For other deployments, use the generic /config  
+                    // For other deployments, use the generic /config
                     volumeMountBuilder.withMountPath("/config");
+                    containerBuilder.withVolumeMounts(volumeMountBuilder.build());
                 }
-
-                containerBuilder.withVolumeMounts(volumeMountBuilder.build());
             } else {
                 log.warn("Volume mount name is null, skipping volume mount.");
             }
         }
 
+
+        // Add /tls volume mount to main container when TLS keystore is required (must be before build())
+        if (Boolean.TRUE.equals(resource.getSpec().getTlsKeystoreEnabled())) {
+            containerBuilder.addToVolumeMounts(new VolumeMountBuilder()
+                .withName("tls-volume")
+                .withMountPath("/tls")
+                .build());
+        }
 
         Container container = containerBuilder.build();
 
@@ -258,24 +274,53 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         PodSpecBuilder podSpecBuilder = new PodSpecBuilder()
             .withContainers(container);
 
-        // Check the flag to determine whether to add the init container 
+        // Build ordered list of init containers
+        List<Container> initContainers = new ArrayList<>();
+
+        if (Boolean.TRUE.equals(resource.getSpec().getTlsKeystoreEnabled())) {
+            log.info("create-tls-keystore init container enabled for {}.", resource.getMetadata().getName());
+            initContainers.add(new ContainerBuilder()
+                .withName("create-tls-keystore")
+                .withImage("eclipse-temurin:17")
+                .withCommand("sh", "-c")
+                .withArgs("keytool -genkeypair -alias ams-mifos -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tls/keystore.p12 -storepass changeit -keypass changeit -validity 3650 -dname \"CN=ams-mifos, OU=PaymentHub, O=Mifos, L=City, ST=State, C=US\" && echo 'Keystore created.' && ls -la /tls/")
+                .withVolumeMounts(new VolumeMountBuilder()
+                    .withName("tls-volume")
+                    .withMountPath("/tls")
+                    .build())
+                .build());
+        }
+
+        if (Boolean.TRUE.equals(resource.getSpec().getWaitForGatewayEnabled())) {
+            log.info("wait-for-gateway init container enabled for {}.", resource.getMetadata().getName());
+            initContainers.add(new ContainerBuilder()
+                .withName("wait-for-gateway")
+                .withImage("curlimages/curl:latest")
+                .withCommand("sh", "-c")
+                .withArgs("until curl -s http://phee-infra-zeebe-gateway:9600/actuator/health/liveness | grep -q '\"status\":\"UP\"'; do echo 'Waiting for Zeebe gateway...'; sleep 2; done; echo 'Zeebe gateway is up.'")
+                .build());
+        }
+
         if (Boolean.TRUE.equals(resource.getSpec().getInitContainerEnabled())) {
-            log.info("Init container enabled, adding to the PodSpec.");
-            Container initContainer = new ContainerBuilder()
+            log.info("wait-db init container enabled for {}.", resource.getMetadata().getName());
+            initContainers.add(new ContainerBuilder()
                 .withName("wait-db")
                 .withImage("jwilder/dockerize")
-                .withArgs("-timeout=120s", "-wait", "tcp://operationsmysql:3306") 
-                .build();
-            podSpecBuilder.withInitContainers(initContainer);
-        } else {
-            log.info("Init container not enabled, skipping init container.");
+                .withArgs("-timeout=120s", "-wait", "tcp://operationsmysql:3306")
+                .build());
+        }
+
+        if (!initContainers.isEmpty()) {
+            podSpecBuilder.withInitContainers(initContainers);
         }
 
         // Add volumes conditionally
+        List<Volume> volumes = new ArrayList<>();
+
         if (resource.getSpec().getVolMount() != null && Boolean.TRUE.equals(resource.getSpec().getVolMount().getEnabled())) {
             String volMountName = resource.getSpec().getVolMount().getName();
             if (volMountName != null) {
-                podSpecBuilder.withVolumes(new VolumeBuilder()
+                volumes.add(new VolumeBuilder()
                     .withName(volMountName)
                     .withConfigMap(new ConfigMapVolumeSourceBuilder()
                         .withName(volMountName)
@@ -284,6 +329,17 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             } else {
                 log.warn("Volume mount name is null, skipping volume creation.");
             }
+        }
+
+        if (Boolean.TRUE.equals(resource.getSpec().getTlsKeystoreEnabled())) {
+            volumes.add(new VolumeBuilder()
+                .withName("tls-volume")
+                .withEmptyDir(new EmptyDirVolumeSource())
+                .build());
+        }
+
+        if (!volumes.isEmpty()) {
+            podSpecBuilder.withVolumes(volumes);
         }
 
         PodSpec podSpec = podSpecBuilder.build();
@@ -300,7 +356,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         DeploymentSpec deploymentSpec = new DeploymentSpecBuilder()
             .withReplicas(resource.getSpec().getReplicas())
             .withSelector(new LabelSelectorBuilder()
-                .withMatchLabels(labels)
+                .withMatchLabels(selectorLabels)
                 .build())
             .withTemplate(podTemplateSpec)
             .build();

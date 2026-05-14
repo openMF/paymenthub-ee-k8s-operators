@@ -94,6 +94,7 @@ public class NetworkingUtils {
 
         PaymentHubDeploymentSpec spec = resource.getSpec();
         List<PaymentHubDeploymentSpec.Service> serviceSpecs = spec.getServices();
+        if (serviceSpecs == null) return Collections.emptyList();
 
         return serviceSpecs.stream()
                 .map(serviceSpec -> {
@@ -141,7 +142,7 @@ public class NetworkingUtils {
      * @param resource The custom resource specifying the Ingress configuration.
      */
     public void reconcileIngress(PaymentHubDeployment resource) {
-        String ingressName = resource.getMetadata().getName() + "-ingress";
+        String ingressName = resource.getMetadata().getName();
         log.info("Reconciling Ingress for resource: {}", resource.getMetadata().getName());
 
         Ingress ingress = createIngress(resource, ingressName);
@@ -170,9 +171,12 @@ public class NetworkingUtils {
     private Ingress createIngress(PaymentHubDeployment resource, String ingressName) {
         log.info("Creating Ingress spec for resource: {}", resource.getMetadata().getName());
 
-        List<IngressTLS> ingressTlsList = resource.getSpec().getIngress().getTls().stream()
-                .map(tls -> new IngressTLS(tls.getHosts(), tls.getSecretName()))
-                .collect(Collectors.toList());
+        List<PaymentHubDeploymentSpec.Ingress.TLS> tlsSpecs = resource.getSpec().getIngress().getTls();
+        List<IngressTLS> ingressTlsList = tlsSpecs != null
+                ? tlsSpecs.stream()
+                    .map(tls -> new IngressTLS(tls.getHosts(), tls.getSecretName()))
+                    .collect(Collectors.toList())
+                : Collections.emptyList();
 
         List<IngressRule> rules = resource.getSpec().getIngress().getRules().stream()
                 .map(rule -> new IngressRuleBuilder()

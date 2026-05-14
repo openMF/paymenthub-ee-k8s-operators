@@ -1,0 +1,98 @@
+version: 2.1
+
+executors:
+  java-executor:
+    docker:
+      - image: cimg/openjdk:21.0.3
+    environment:
+      JVM_OPTS: -Xmx512m
+
+jobs:
+  test:
+    executor: java-executor
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - gradle-{{ checksum "build.gradle.kts" }}
+            - gradle-
+      - run:
+          name: Unit tests (no cluster required)
+          command: ./gradlew test
+      - save_cache:
+          paths:
+            - ~/.gradle/caches
+          key: gradle-{{ checksum "build.gradle.kts" }}
+      - store_test_results:
+          path: build/reports/tests
+
+  build_and_push_branch_image:
+    executor: java-executor
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.24
+      - restore_cache:
+          keys:
+            - gradle-{{ checksum "build.gradle.kts" }}
+            - gradle-
+      - run:
+          name: Compute sanitised tag vars
+          command: |
+            echo "export ORG=$(echo $CIRCLE_PROJECT_USERNAME | tr '[:upper:]' '[:lower:]')" >> $BASH_ENV
+            echo "export REPO=$(echo $CIRCLE_PROJECT_REPONAME | tr '[:upper:]' '[:lower:]')" >> $BASH_ENV
+            BRANCH_CLEAN=$(echo $CIRCLE_BRANCH | tr '[:upper:]/' '[:lower:]-' | tr -cd 'a-z0-9-')
+            echo "export BRANCH_TAG=${BRANCH_CLEAN}-${CIRCLE_SHA1:0:7}" >> $BASH_ENV
+            echo "export BRANCH_LATEST=${BRANCH_CLEAN}-latest" >> $BASH_ENV
+      - run:
+          name: Build and push multi-arch image via JIB
+          command: |
+            ./gradlew jib \
+              -Djib.to.image=docker.io/${ORG}/${REPO} \
+              -Djib.to.tags="${BRANCH_TAG},${BRANCH_LATEST}" \
+              -Djib.to.auth.username=${DOCKERHUB_USERNAME} \
+              -Djib.to.auth.password=${DOCKERHUB_PASSWORD}
+
+  build_and_push_tag_image:
+    executor: java-executor
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.24
+      - restore_cache:
+          keys:
+            - gradle-{{ checksum "build.gradle.kts" }}
+            - gradle-
+      - run:
+          name: Build and push semver-tagged image via JIB
+          command: |
+            ORG=$(echo $CIRCLE_PROJECT_USERNAME | tr '[:upper:]' '[:lower:]')
+            REPO=$(echo $CIRCLE_PROJECT_REPONAME | tr '[:upper:]' '[:lower:]')
+            ./gradlew jib \
+              -Djib.to.image=docker.io/${ORG}/${REPO} \
+              -Djib.to.tags="${CIRCLE_TAG}" \
+              -Djib.to.auth.username=${DOCKERHUB_USERNAME} \
+              -Djib.to.auth.password=${DOCKERHUB_PASSWORD}
+
+workflows:
+  version: 2
+  build-test-push:
+    jobs:
+      - test:
+          filters:
+            branches:
+              ignore: /^ci\/mt-.*/
+      - build_and_push_branch_image:
+          context: DOCKER
+          requires:
+            - test
+          filters:
+            branches:
+              ignore: /^ci\/mt-.*/
+      - build_and_push_tag_image:
+          context: DOCKER
+          filters:
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/

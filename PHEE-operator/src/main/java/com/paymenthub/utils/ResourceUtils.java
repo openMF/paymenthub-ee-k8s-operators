@@ -9,8 +9,7 @@ import java.util.logging.Logger;
 
 import java.util.*;
 
-import com.paymenthub.customresource.PaymentHubDeployment; 
-import com.paymenthub.utils.OwnerReferenceUtils;
+import com.paymenthub.customresource.PaymentHubDeployment;
 
 /**
  * Utility class for managing Kubernetes resources like ConfigMaps and Secrets.
@@ -56,16 +55,50 @@ public class ResourceUtils {
      */
     private ConfigMap createConfigMap(PaymentHubDeployment resource, String name) {
         log.info("Creating ConfigMap spec for resource: " + resource.getMetadata().getName());
-        
+
         Map<String, String> data = new HashMap<>();
-        data.put("configuration.properties", 
+        String domain = resource.getSpec().getDomain();
+        data.put("configuration.properties",
             "oauth.enabled false\n" +
             "oauth.basicAuth true\n" +
             "oauth.basicAuthToken Y2xpZW50Og==\n" +
-            "oauth.serverUrl https://ops-bk.sandbox.mifos.io\n" +  
-            "serverUrl https://ops.sandbox.mifos.io\n"  +
+            "oauth.serverUrl https://ops-bk." + domain + "\n" +
+            "serverUrl https://ops-bk." + domain + "\n" +
             "auth.enabled false\n" +
             "auth.tenant phdefault");
+
+        // The operations-web image's default nginx config uses `aio on`, which calls
+        // io_setup() — a Linux AIO syscall not available on Colima/macOS kernels.
+        // Override default.conf with a config that omits aio, matching the Helm chart.
+        if ("ph-ee-operations-web".equals(resource.getMetadata().getName())) {
+            data.put("default.conf",
+                "server {\n" +
+                "    listen       80;\n" +
+                "    server_name  localhost;\n" +
+                "    root   /usr/share/nginx/html;\n" +
+                "    index  index.html index.htm;\n" +
+                "\n" +
+                "    sendfile off;\n" +
+                "\n" +
+                "    location / {\n" +
+                "        try_files $uri $uri/ /index.html;\n" +
+                "    }\n" +
+                "\n" +
+                "    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n" +
+                "        expires 1y;\n" +
+                "        add_header Cache-Control \"public, immutable\";\n" +
+                "    }\n" +
+                "\n" +
+                "    location ~* (index\\.html|env\\.js)$ {\n" +
+                "        add_header Cache-Control \"no-store, no-cache, must-revalidate\";\n" +
+                "    }\n" +
+                "\n" +
+                "    error_page   500 502 503 504  /50x.html;\n" +
+                "    location = /50x.html {\n" +
+                "        root   /usr/share/nginx/html;\n" +
+                "    }\n" +
+                "}\n");
+        }
 
         return new ConfigMapBuilder()
                 .withNewMetadata()

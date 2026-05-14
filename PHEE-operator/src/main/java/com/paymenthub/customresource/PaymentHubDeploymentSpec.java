@@ -1,16 +1,19 @@
 package com.paymenthub.customresource;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
-import java.util.*; 
+import java.util.*;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class PaymentHubDeploymentSpec {
     private Boolean enabled;
+    private String domain = "mifos.gazelle.test";
     private Map<String, String> labels;
-    private VolMount volMount;   
+    private VolMount volMount;
     private Integer replicas;
     private String image;
     private Integer containerPort;
-     private Resources resources;
-     private Probe livenessProbe;
+    private Resources resources;
+    private Probe livenessProbe;
     private Probe readinessProbe;
     private Boolean rbacEnabled;
     private Boolean secretEnabled;
@@ -20,14 +23,17 @@ public class PaymentHubDeploymentSpec {
     private List<Service> services;
     private List<EnvironmentVariable> environment;
     private Boolean initContainerEnabled;
+    private Boolean waitForGatewayEnabled;
+    private Boolean tlsKeystoreEnabled;
 
     public PaymentHubDeploymentSpec() {
     }
 
-    public PaymentHubDeploymentSpec(Boolean enabled, Map<String, String> labels, VolMount volMount, Integer replicas, String image, 
+    public PaymentHubDeploymentSpec(Boolean enabled, Map<String, String> labels, VolMount volMount, Integer replicas, String image,
                                  Integer containerPort, Resources resources, Probe livenessProbe, Probe readinessProbe,
                                  Boolean rbacEnabled, Boolean secretEnabled, Boolean configMapEnabled, Boolean ingressEnabled,
-                                 Ingress ingress, List<Service> services, List<EnvironmentVariable> environment, Boolean initContainerEnabled) {
+                                 Ingress ingress, List<Service> services, List<EnvironmentVariable> environment, Boolean initContainerEnabled,
+                                 Boolean waitForGatewayEnabled, Boolean tlsKeystoreEnabled) {
         this.enabled = enabled;
         this.labels = labels;
         this.volMount = volMount;
@@ -45,6 +51,8 @@ public class PaymentHubDeploymentSpec {
         this.services = services;
         this.environment = environment;
         this.initContainerEnabled = initContainerEnabled;
+        this.waitForGatewayEnabled = waitForGatewayEnabled;
+        this.tlsKeystoreEnabled = tlsKeystoreEnabled;
     }
 
     public Boolean getEnabled() {
@@ -53,6 +61,14 @@ public class PaymentHubDeploymentSpec {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getDomain() {
+        return domain;
+    }
+
+    public void setDomain(String domain) {
+        this.domain = domain;
     }
 
     public Map<String, String> getLabels() {
@@ -183,6 +199,21 @@ public class PaymentHubDeploymentSpec {
         this.initContainerEnabled = initContainerEnabled;
     }
 
+    public Boolean getWaitForGatewayEnabled() {
+        return waitForGatewayEnabled;
+    }
+
+    public void setWaitForGatewayEnabled(Boolean waitForGatewayEnabled) {
+        this.waitForGatewayEnabled = waitForGatewayEnabled;
+    }
+
+    public Boolean getTlsKeystoreEnabled() {
+        return tlsKeystoreEnabled;
+    }
+
+    public void setTlsKeystoreEnabled(Boolean tlsKeystoreEnabled) {
+        this.tlsKeystoreEnabled = tlsKeystoreEnabled;
+    }
 
     @Override
     public String toString() {
@@ -204,6 +235,8 @@ public class PaymentHubDeploymentSpec {
                 ", services=" + services +
                 ", environment=" + environment +
                 ", initContainerEnabled=" + initContainerEnabled +
+                ", waitForGatewayEnabled=" + waitForGatewayEnabled +
+                ", tlsKeystoreEnabled=" + tlsKeystoreEnabled +
                 '}';
     }
 
@@ -213,7 +246,7 @@ public class PaymentHubDeploymentSpec {
         if (!(o instanceof PaymentHubDeploymentSpec)) return false;
         PaymentHubDeploymentSpec that = (PaymentHubDeploymentSpec) o;
         return Objects.equals(getEnabled(), that.getEnabled()) &&
-               Objects.equals(getLabels(), that.getLabels()) && 
+               Objects.equals(getLabels(), that.getLabels()) &&
                Objects.equals(getVolMount(), that.getVolMount()) &&
                Objects.equals(getReplicas(), that.getReplicas()) &&
                Objects.equals(getImage(), that.getImage()) &&
@@ -228,14 +261,17 @@ public class PaymentHubDeploymentSpec {
                Objects.equals(getIngress(), that.getIngress()) &&
                Objects.equals(getServices(), that.getServices()) &&
                Objects.equals(getEnvironment(), that.getEnvironment()) &&
-               Objects.equals(getInitContainerEnabled(), that.getInitContainerEnabled());
+               Objects.equals(getInitContainerEnabled(), that.getInitContainerEnabled()) &&
+               Objects.equals(getWaitForGatewayEnabled(), that.getWaitForGatewayEnabled()) &&
+               Objects.equals(getTlsKeystoreEnabled(), that.getTlsKeystoreEnabled());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getEnabled(), getLabels(), getVolMount(), getReplicas(), getImage(), getContainerPort(), 
-                            getResources(), getLivenessProbe(), getReadinessProbe(), getRbacEnabled(), getSecretEnabled(), 
-                            getConfigMapEnabled(), getIngressEnabled(), getIngress(), getServices(), getEnvironment(), getInitContainerEnabled());
+        return Objects.hash(getEnabled(), getLabels(), getVolMount(), getReplicas(), getImage(), getContainerPort(),
+                            getResources(), getLivenessProbe(), getReadinessProbe(), getRbacEnabled(), getSecretEnabled(),
+                            getConfigMapEnabled(), getIngressEnabled(), getIngress(), getServices(), getEnvironment(),
+                            getInitContainerEnabled(), getWaitForGatewayEnabled(), getTlsKeystoreEnabled());
     }
 
     // Inner classes for nested objects 
@@ -512,7 +548,6 @@ public class PaymentHubDeploymentSpec {
             this.annotations = annotations;
             this.tls = tls;
             this.rules = rules;
-            this.labels = labels;
         }
 
         public String getHost() {
