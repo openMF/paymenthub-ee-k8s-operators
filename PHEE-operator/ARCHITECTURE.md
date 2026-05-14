@@ -1,202 +1,137 @@
 # PHEE Operator Architecture
 
-This document provides a quick overview of the architecture of the PHEE Operator.
+This document provides a conceptual overview of the PHEE Operator — what it is, how its components relate, and why key design decisions were made.
 
 ## Repo Structure
 
+This repo contains operator **source code only**. Deployment manifests (CRD, CRs, RBAC) live in [mifos-gazelle](https://github.com/openMF/mifos-gazelle).
+
 ```
 PHEE-operator/
-├── deploy/
-│   ├── cr/
-│   │   └── ph-ee-CustomResource.yaml
-│   ├── crds/
-│   │   └── ph-ee-CustomResourceDefinition.yaml
-│   └── operator/
-│       └── operator_deployment_manifests.yaml
 ├── src/
-│   └── main/
-│       └── java/
-│           └── com/
-│               └── paymenthub/
-│                   ├── customresource/ 
-│                   │   ├── PaymentHubDeployment.java
-│                   │   ├── PaymentHubDeploymentSpec.java
-│                   │   └── PaymentHubDeploymentStatus.java 
-│                   ├── utils/
-|                   │   ├── DeletionUtil.java 
-|                   │   ├── DeploymentUtils.java 
-|                   │   ├── LoggingUtil.java 
-|                   │   ├── NetworkingUtils.java 
-|                   │   ├── OwnerReferenceUtils.java 
-|                   │   ├── RbacUtils.java 
-|                   │   ├── ResourceUtils.java 
-|                   │   └── StatusUpdateUtil.java
-│                   ├── OperatorMain.java
-|                   └── PaymentHubDeploymentController.java
+│   ├── main/java/com/paymenthub/
+│   │   ├── customresource/
+│   │   │   ├── PaymentHubDeployment.java
+│   │   │   ├── PaymentHubDeploymentSpec.java
+│   │   │   └── PaymentHubDeploymentStatus.java
+│   │   ├── utils/
+│   │   │   ├── DeletionUtil.java
+│   │   │   ├── DeploymentUtils.java
+│   │   │   ├── LoggingUtil.java
+│   │   │   ├── NetworkingUtils.java
+│   │   │   ├── OwnerReferenceUtils.java
+│   │   │   ├── RbacUtils.java
+│   │   │   ├── ResourceUtils.java
+│   │   │   └── StatusUpdateUtil.java
+│   │   ├── OperatorMain.java
+│   │   └── PaymentHubDeploymentController.java
+│   └── test/
+│       ├── java/                          ← unit tests (JUnit 5 + Mockito)
+│       └── resources/features/            ← BDD scenarios (Cucumber, 11 feature files)
+├── build.gradle.kts                       ← Gradle build; Java 21; Jib for image publishing
 ├── ARCHITECTURE.md
-├── deploy-operator.sh 
 ├── DEVELOPER_GUIDE.md
-├── pom.xml
-├── README.md 
-└── ys_values.md
+└── README.md
 ```
 
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Overview](#overview) 
+2. [Overview](#overview)
 3. [Components](#components)
    - [Custom Resource Definition (CRD)](#custom-resource-definition-crd)
    - [Custom Resource (CR)](#custom-resource-cr)
-   - [OperatorMain](#OperatorMain)
+   - [OperatorMain](#operatormain)
    - [Controller](#controller)
-   - [Utility Classes](#utility-classes) 
+   - [Utility Classes](#utility-classes)
+   - [Custom Resource Model Classes](#custom-resource-model-classes)
 4. [Deployment](#deployment)
 5. [Design Decisions](#design-decisions)
 
 
 ## Introduction
 
-The PHEE Operator is a Kubernetes Operator designed to manage and automate the lifecycle of a specific Custom Resource (CR) within a Kubernetes cluster. Built on top of the Mifos-Gazelle script, the PHEE Operator streamlines the deployment, management, and cleanup of complex Kubernetes resources by leveraging custom automation and a well-defined structure. The operator is particularly tailored to manage deployments within the Mifos ecosystem, currently configured to handle deployments with their associated ingress and services under the paymenthub deployment. 
+The PHEE Operator is a Kubernetes Operator that manages and automates the lifecycle of Payment Hub EE components within a Kubernetes cluster. It watches `PaymentHubDeployment` custom resources and reconciles the cluster state — creating, updating, and cleaning up Deployments, Services, Ingresses, ConfigMaps, Secrets, and RBAC objects.
+
+The operator is deployed and driven by [mifos-gazelle](https://github.com/openMF/mifos-gazelle). Each Payment Hub EE component (connectors, channels, importer, operations app, Zeebe ops, etc.) has its own `PaymentHubDeployment` CR; the operator reconciles all 19 of them.
 
 ## Overview
 
-The PHEE Operator comprises several key components:
-- **Custom Resource Definitions (CRDs):** Define the schema and structure for custom resources in Kubernetes.
-- **Custom Resources (CRs):** Represent the desired state of deployments as instances of the CRD.
-- **OperatorMain:** Sets up the Kubernetes client, initializes the operator, registers the controller and starts the reconciliation process.
-- **Controller:** Handles reconciliation loops to ensure the cluster's state matches the desired configuration.
-- **Utility Classes:** Provide essential functions for creating resources, managing configurations, and logging.
+The operator comprises several key components:
+
+- **Custom Resource Definitions (CRDs):** Define the schema and validation rules for `PaymentHubDeployment` resources in Kubernetes.
+- **Custom Resources (CRs):** Represent the desired state of each PHEE component as an instance of the CRD.
+- **OperatorMain:** Sets up the Kubernetes client, initializes the operator, registers the controller, and starts the reconciliation loop.
+- **Controller:** Handles reconciliation to ensure the cluster's actual state matches the desired configuration.
+- **Utility Classes:** Provide focused functions for creating resources, managing configurations, and logging.
 
 
 ## Components
 
 ### Custom Resource Definition (CRD)
 
-- **File**: `deploy/crds/ph-ee-CustomResourceDefinition.yaml`
+- **Authoritative location**: `mifos-gazelle/src/deployer/operators/phee/config/crd/ph-ee-CustomResourceDefinition.yaml`
+- **API group / version**: `gazelle.mifos.io / v1`
 
-- **Purpose**: Defines the schema and structure for Custom Resources managed by the operator.
-
-- **Details**:
-  - Specifies fields such as `spec`, `status`, and others essential for CRs.
-  - Includes validation rules for ensuring data integrity within Custom Resources.
+The CRD defines the schema and structure for all `PaymentHubDeployment` custom resources managed by the operator. It specifies the fields in `spec` (desired state) and `status` (observed state), including validation rules.
 
 ### Custom Resource (CR)
 
-- **File**: `deploy/cr/ph-ee-CustomResource.yaml`
+- **Authoritative location**: `mifos-gazelle/src/deployer/operators/phee/config/cr/` (one file per component, 19 total)
 
-- **Purpose**: Defines the actual Custom Resource instances, detailing the specific configuration for all deployments under the paymenthub.
-
-- **Details**:
-  - Populates the fields as specified in the CRD.
-  - Contains configuration parameters and resource specifications for each deployment.
+Each CR is an instance of the CRD representing the desired state of one PHEE component. CRs are applied to the cluster by mifos-gazelle during `phee.sh` deployment. Do not duplicate CR files in this repo — keeping a second copy creates sync drift.
 
 ### OperatorMain
 
-- **Main File**: `src/main/java/com/paymenthub/operator/OperatorMain.java`
+- **File**: `src/main/java/com/paymenthub/OperatorMain.java`
 
-- **Purpose**: Serves as the entry point for the operator, responsible for initializing the operator and registering the controller that handles CR lifecycle management.
-
-- **Details**:
-  - Initializes the Kubernetes client for communication with the cluster.
-  - Registers the CRD schema and binds the controller to monitor and manage Custom Resources.
+Entry point for the operator. Initializes the Fabric8 Kubernetes client, creates an `Operator` instance, registers `PaymentHubDeploymentController` as the reconciler, and starts the operator loop.
 
 ### Controller
 
-- **File**: `src/main/java/com/paymenthub/operator/PaymentHubDeploymentController.java`
+- **File**: `src/main/java/com/paymenthub/PaymentHubDeploymentController.java`
 
-- **Purpose**: Implements the logic for reconciling the desired state of Custom Resources with the actual state in the cluster, ensuring that deployments are created and maintained according to the specifications in the CR.
+Core of the operator. Implements `Reconciler<PaymentHubDeployment>` and `Cleaner<PaymentHubDeployment>`. Continuously watches for `PaymentHubDeployment` CR changes and reconciles:
 
-- **Details**:
-  - Continuously watches for changes in Custom Resources and reconciles the state.
-  - Manages the creation and updates of Kubernetes resources like deployments, RBACs, services, and ingress as defined by the CR.
-  - Handles error conditions and retry mechanisms to ensure stability and consistency in resource management.
+- RBAC (ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding)
+- Secrets and ConfigMaps
+- Services and Ingresses
+- Deployments (with optional init containers: TLS keystore generation, wait-for-database, wait-for-gateway)
 
+Handles graceful deletion, including cluster-scoped RBAC cleanup that owner references cannot handle automatically.
 
 ### Utility Classes
 
-#### DeletionUtil.java
-- **File**: `src/main/java/com/paymenthub/utils/DeletionUtil.java`
-- **Purpose**: Manages the deletion of Kubernetes resources like Deployments, RBAC resources, Secrets, ConfigMaps, and Services.
+| Class | File | Purpose |
+|-------|------|---------|
+| `DeletionUtil` | `utils/DeletionUtil.java` | Deletes Deployments, RBAC, Secrets, ConfigMaps, Ingress, Services by owner reference |
+| `DeploymentUtils` | `utils/DeploymentUtils.java` | Helper methods: container specs, resource limits, probes, volume mounts |
+| `LoggingUtil` | `utils/LoggingUtil.java` | Structured logging with CR name, namespace, and operation for consistent observability |
+| `NetworkingUtils` | `utils/NetworkingUtils.java` | Creates, updates, deletes Services and Ingresses |
+| `OwnerReferenceUtils` | `utils/OwnerReferenceUtils.java` | Sets owner references for automatic child-resource garbage collection |
+| `RbacUtils` | `utils/RbacUtils.java` | Reconciles ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding |
+| `ResourceUtils` | `utils/ResourceUtils.java` | Reconciles ConfigMaps, Secrets (base64-encoded), and PersistentVolumeClaims |
+| `StatusUpdateUtil` | `utils/StatusUpdateUtil.java` | Updates the CR status subresource (disabled / error / ready with replica count) |
 
-#### DeploymentUtils.java
-- **File**: `src/main/java/com/paymenthub/utils/DeploymentUtils.java`
-- **Purpose**: Handles creation, updating, and management of Kubernetes `Deployment` resources.
+### Custom Resource Model Classes
 
-#### LoggingUtil.java
-- **File**: `src/main/java/com/paymenthub/utils/LoggingUtil.java`
-- **Purpose**: Provides consistent and structured logging for the operator.
-
-#### NetworkingUtils.java
-- **File**: `src/main/java/com/paymenthub/utils/NetworkingUtils.java`
-- **Purpose**: Manages Kubernetes networking resources such as `Service` and `Ingress`.
-
-#### OwnerReferenceUtils.java
-- **File**: `src/main/java/com/paymenthub/utils/OwnerReferenceUtils.java`
-- **Purpose**: Manages owner references in Kubernetes resources to ensure proper cleanup.
-
-#### RbacUtils.java
-- **File**: `src/main/java/com/paymenthub/utils/RbacUtils.java`
-- **Purpose**: Handles creation and management of RBAC resources like `ServiceAccounts`, `Roles`, and `RoleBindings`.
-
-#### ResourceUtils.java
-- **File**: `src/main/java/com/paymenthub/utils/ResourceUtils.java`
-- **Purpose**: Manages resources like `ConfigMaps`, `Secrets`, and `PersistentVolumeClaims`.
-
-#### StatusUpdateUtil.java
-- **File**: `src/main/java/com/paymenthub/utils/StatusUpdateUtil.java`
-- **Purpose**: Updates the status subresource of the `PaymentHubDeployment` custom resource.
-
-
-### Custom Resource Classes
-
-#### PaymentHubDeployment.java
-
-- **File**: `src/main/java/com/paymenthub/customresource/PaymentHubDeployment.java`
-
-- **Purpose**: Defines the Custom Resource class according to the specification used in the controller file.
-
-#### PaymentHubDeploymentSpec.java
-
-- **File**: `src/main/java/com/paymenthub/customresource/PaymentHubDeploymentSpec.java`
-
-- **Purpose**: Defines the specification for the operator, containing fields defined in the CRD and applied by the CRs. Provide getters and setters to access the CR values in the operator.
-
-#### PaymentHubDeploymentStatus.java
-
-- **File**: `src/main/java/com/paymenthub/customresource/PaymentHubDeploymentStatus.java`
-
-- **Purpose**: Defines the status fields for the Custom Resource, allowing the operator to communicate the status of the resource.
-
-
-### pom.xml
-
-- **File**: `pom.xml`
-
-- **Purpose**: This file contains all the dependencies required for this project.
+| Class | File | Purpose |
+|-------|------|---------|
+| `PaymentHubDeployment` | `customresource/PaymentHubDeployment.java` | Extends `CustomResource`, implements `Namespaced`; annotated with API group, version, and plural name so Fabric8 recognises it |
+| `PaymentHubDeploymentSpec` | `customresource/PaymentHubDeploymentSpec.java` | Spec fields with getters/setters: `enabled`, `image`, `replicas`, `containerPort`, `domain`, `labels`, `resources`, `livenessProbe`, `readinessProbe`, `rbacEnabled`, `secretEnabled`, `configMapEnabled`, `ingressEnabled`, `initContainerEnabled`, `waitForGatewayEnabled`, `tlsKeystoreEnabled`, `volMount`, `ingress`, `services`, `environment` |
+| `PaymentHubDeploymentStatus` | `customresource/PaymentHubDeploymentStatus.java` | Status fields: `availableReplicas`, `ready`, `lastAppliedImage`, `errorMessage` |
 
 ## Deployment
 
-The deployment of the PHEE Operator involves several steps:
+Deployment is fully managed by mifos-gazelle. See [README.md](README.md) for build and deploy instructions.
 
-- **CRD Deployment**: Apply the CRD to the cluster.
-- **Operator Deployment**: Deploy the operator. 
-- **CR Deployment**: Create custom resources as needed.
-
-Follow steps in [README.md](README.md) 
-
-Deployment files:
-
-- **CRD**: `deploy/crds/ph-ee-CustomResourceDefinition.yaml`
-- **Operator Deployment**: `deploy/operator/operator_deployment_manifests.yaml` 
-- **Custom Resource**: `deploy/cr/ph-ee-CustomResource.yaml`
+The mifos-gazelle `phee.sh` script applies the CRD, RBAC, and operator Deployment, then applies all 19 per-component CRs. The operator starts reconciling immediately once the CRs are applied.
 
 ## Design Decisions
 
-- **Language Choice**: The operator is implemented in Java due to its strong typing and extensive ecosystem.
-- **Framework**: Utilized the Java Operator SDK for streamlined development.
-- **CRD Structure**: Designed to be extensible and easy to validate.
-- **Controller Logic**: Focused on idempotency and modularity.
-  
-
- 
+- **Language**: Java — strong typing, extensive ecosystem, and natural fit for the Java Operator SDK.
+- **Framework**: [Java Operator SDK (JOSDK)](https://javaoperatorsdk.io/) — handles watch loops, event queuing, and retry back-off, letting the controller focus on reconciliation logic.
+- **Build**: Gradle + [Jib](https://github.com/GoogleContainerTools/jib) — reproducible multi-platform (linux/amd64, linux/arm64) container images without a Docker daemon in CI.
+- **CRD structure**: Designed to be extensible — adding a new spec field requires a one-line CRD change, a getter/setter in `PaymentHubDeploymentSpec`, and usage in the relevant util class.
+- **Controller logic**: Focused on idempotency and modularity — each utility class owns one resource type, making the reconciliation loop easy to read and test independently.
+- **Deployment manifests in mifos-gazelle**: Keeping CRDs and CRs in the deployment tool (rather than this repo) avoids drift between what the operator expects and what gets applied to the cluster.

@@ -15,11 +15,12 @@ Feature: GSMA Connector reconciliation
     And the Deployment container image is "docker.io/openmf/ph-ee-connector-gsma:v1.3.0-gazelle-1.1.0"
     And a Service "ph-ee-connector-gsma" should exist in namespace "paymenthub"
 
-  Scenario: Connector-gsma never creates Ingress even when ingressEnabled is true
+  Scenario: Connector-gsma with ingressEnabled true creates an Ingress
     Given a PaymentHubDeployment CR named "ph-ee-connector-gsma" with ingressEnabled true
     And the CR has ingress host "gsma.mifos.gazelle.test"
     When the operator reconciles the CR "ph-ee-connector-gsma"
-    Then no Ingress "ph-ee-connector-gsma" should exist in namespace "paymenthub"
+    Then an Ingress "ph-ee-connector-gsma" should exist in namespace "paymenthub"
+    And the Ingress has host "gsma.mifos.gazelle.test"
 
   Scenario: Disabled connector-gsma removes Deployment and Service
     Given a Deployment "ph-ee-connector-gsma" already exists in namespace "paymenthub"

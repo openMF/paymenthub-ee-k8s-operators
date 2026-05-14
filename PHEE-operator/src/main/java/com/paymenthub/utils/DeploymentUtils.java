@@ -27,7 +27,9 @@ public class DeploymentUtils {
      * @return List of EnvVar objects to be added to the deployment container.
      */
     public static List<EnvVar> createEnvironmentVariables(PaymentHubDeployment resource) {
-        return resource.getSpec().getEnvironment().stream()
+        List<PaymentHubDeploymentSpec.EnvironmentVariable> envVars = resource.getSpec().getEnvironment();
+        if (envVars == null) return Collections.emptyList();
+        return envVars.stream()
             .map(env -> {
                 EnvVarBuilder envVarBuilder = new EnvVarBuilder().withName(env.getName());
 
@@ -61,16 +63,18 @@ public class DeploymentUtils {
      * @return ResourceRequirements object to be added to the deployment container.
      */
     public static ResourceRequirements createResourceRequirements(PaymentHubDeployment resource) {
-        return new ResourceRequirementsBuilder()
-            .withLimits(new HashMap<String, Quantity>() {{
-                put("cpu", new Quantity(resource.getSpec().getResources().getLimits().getCpu()));
-                put("memory", new Quantity(resource.getSpec().getResources().getLimits().getMemory()));
-            }})
-            .withRequests(new HashMap<String, Quantity>() {{
-                put("cpu", new Quantity(resource.getSpec().getResources().getRequests().getCpu()));
-                put("memory", new Quantity(resource.getSpec().getResources().getRequests().getMemory()));
-            }})
-            .build();
+        PaymentHubDeploymentSpec.Resources res = resource.getSpec().getResources();
+        if (res == null) return new ResourceRequirementsBuilder().build();
+        ResourceRequirementsBuilder builder = new ResourceRequirementsBuilder();
+        if (res.getLimits() != null) {
+            builder.addToLimits("cpu",    new Quantity(res.getLimits().getCpu()));
+            builder.addToLimits("memory", new Quantity(res.getLimits().getMemory()));
+        }
+        if (res.getRequests() != null) {
+            builder.addToRequests("cpu",    new Quantity(res.getRequests().getCpu()));
+            builder.addToRequests("memory", new Quantity(res.getRequests().getMemory()));
+        }
+        return builder.build();
     }
 
     /**

@@ -2,24 +2,16 @@ package com.paymenthub.customresource;
 
 import java.util.Objects;
 
-/**
- * Represents the status of a PaymentHub deployment.
- * 
- * This class encapsulates information about the deployment's current state, including the number of available replicas,
- * any error messages, the last applied image, and whether the deployment is ready. It provides getter and setter methods
- * to access and modify these properties, as well as `toString()`, `equals()`, and `hashCode()` methods for object comparison
- * and representation.
- */
 public class PaymentHubDeploymentStatus {
     private Integer availableReplicas;
     private String errorMessage;
     private String lastAppliedImage;
-    private boolean ready;
+    private Boolean ready;
 
     public PaymentHubDeploymentStatus() {
     }
 
-    public PaymentHubDeploymentStatus(Integer availableReplicas, String errorMessage, String lastAppliedImage, boolean ready) {
+    public PaymentHubDeploymentStatus(Integer availableReplicas, String errorMessage, String lastAppliedImage, Boolean ready) {
         this.availableReplicas = availableReplicas;
         this.errorMessage = errorMessage;
         this.lastAppliedImage = lastAppliedImage;
@@ -50,11 +42,11 @@ public class PaymentHubDeploymentStatus {
         this.lastAppliedImage = lastAppliedImage;
     }
 
-    public boolean isReady() {
+    public Boolean isReady() {
         return ready;
     }
 
-    public void setReady(boolean ready) {
+    public void setReady(Boolean ready) {
         this.ready = ready;
     }
 
@@ -73,7 +65,7 @@ public class PaymentHubDeploymentStatus {
         if (this == o) return true;
         if (!(o instanceof PaymentHubDeploymentStatus)) return false;
         PaymentHubDeploymentStatus that = (PaymentHubDeploymentStatus) o;
-        return ready == that.ready &&
+        return Objects.equals(ready, that.ready) &&
                Objects.equals(availableReplicas, that.availableReplicas) &&
                Objects.equals(errorMessage, that.errorMessage) &&
                Objects.equals(lastAppliedImage, that.lastAppliedImage);

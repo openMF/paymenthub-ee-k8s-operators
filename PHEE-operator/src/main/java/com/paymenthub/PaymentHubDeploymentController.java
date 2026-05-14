@@ -9,18 +9,19 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.Resource;  
 
 // Operator SDK imports
-import io.javaoperatorsdk.operator.api.reconciler.Context;    
-import io.javaoperatorsdk.operator.api.reconciler.ControllerConfiguration;    
-import io.javaoperatorsdk.operator.api.reconciler.Reconciler;  
-import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;  
+import io.javaoperatorsdk.operator.api.reconciler.Context;
+import io.javaoperatorsdk.operator.api.reconciler.ControllerConfiguration;
+import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
+import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
+import io.javaoperatorsdk.operator.api.reconciler.Cleaner;
+import io.javaoperatorsdk.operator.api.reconciler.DeleteControl;
 
 // Logging imports
 import org.slf4j.Logger;  
 import org.slf4j.LoggerFactory;  
 
 // Custom classes and utils
-import com.paymenthub.customresource.PaymentHubDeploymentSpec; 
-import com.paymenthub.customresource.PaymentHubDeployment;  
+import com.paymenthub.customresource.PaymentHubDeployment;
 import com.paymenthub.utils.LoggingUtil;  
 import com.paymenthub.utils.StatusUpdateUtil;   
 import com.paymenthub.utils.DeletionUtil;  
@@ -36,7 +37,11 @@ import java.util.*;
 
 
 @ControllerConfiguration
-public class PaymentHubDeploymentController implements Reconciler<PaymentHubDeployment> {
+public class PaymentHubDeploymentController implements Reconciler<PaymentHubDeployment>, Cleaner<PaymentHubDeployment> {
+
+    private static final String TLS_INIT_IMAGE  = "eclipse-temurin:17.0.11_9-jdk-jammy";
+    private static final String CURL_INIT_IMAGE = "curlimages/curl:8.7.1";
+    private static final String WAIT_DB_IMAGE   = "busybox:1.36";
 
 
     /**
@@ -84,7 +89,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         if (resource.getSpec().getEnabled() == null || !resource.getSpec().getEnabled()) {
             log.info("Deployment {} is disabled, deleting all associated resources.", resourceName);
             DeletionUtil.deleteResources(kubernetesClient, resource);
-            return StatusUpdateUtil.updateDisabledStatus(kubernetesClient, resource);
+            return StatusUpdateUtil.updateDisabledStatus(resource);
         }
 
         // Log detailed resource information for debugging
@@ -128,11 +133,8 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             // Always reconcile Services when enabled
             networkingUtils.reconcileServices(resource);
 
-            // Reconcile Ingress conditionally (gsma never gets an Ingress)
-            if ("ph-ee-connector-gsma".equals(resourceName)) {
-                log.info("Special case for {}: Services only, no Ingress.", resourceName);
-                DeletionUtil.deleteIngressResources(kubernetesClient, resource);
-            } else if (resource.getSpec().getIngressEnabled() == null || !resource.getSpec().getIngressEnabled()) {
+            // Reconcile Ingress conditionally
+            if (resource.getSpec().getIngressEnabled() == null || !resource.getSpec().getIngressEnabled()) {
                 log.info("Ingress for resource {} is disabled, deleting Ingress if present.", resourceName);
                 DeletionUtil.deleteIngressResources(kubernetesClient, resource);
             } else {
@@ -146,25 +148,36 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
 
             // Return success status update
             log.info("Reconciliation successful for {}.", resourceName);
-            return StatusUpdateUtil.updateStatus(kubernetesClient, resource, resource.getSpec().getReplicas(), resource.getSpec().getImage(), true, "");
+            return StatusUpdateUtil.updateStatus(resource, resource.getSpec().getReplicas(), resource.getSpec().getImage(), true, "");
 
         } catch (Exception e) {
             // Log the error and return an error status update
             log.error("Error during reconciliation for resource " + resourceName, e);
-            return StatusUpdateUtil.updateErrorStatus(kubernetesClient, resource, resource.getSpec().getImage(), e);
+            return StatusUpdateUtil.updateErrorStatus(resource, resource.getSpec().getImage(), e);
         }
     }
 
     
     /**
+     * Called when a PaymentHubDeployment CR is deleted directly. Cleans up cluster-scoped
+     * resources (ClusterRole, ClusterRoleBinding) that owner-references cannot GC automatically.
+     */
+    @Override
+    public DeleteControl cleanup(PaymentHubDeployment resource, Context<PaymentHubDeployment> context) {
+        log.info("CR {} deleted — cleaning up cluster-scoped RBAC resources.", resource.getMetadata().getName());
+        DeletionUtil.deleteRbacResources(kubernetesClient, resource);
+        return DeleteControl.defaultDelete();
+    }
+
+    /**
      * Reconciles the Deployment based on the given custom resource.
-     * 
+     *
      * @param resource The custom resource containing the specifications for the deployment.
      */
     private void reconcileDeployment(PaymentHubDeployment resource) {
         log.info("Reconciling Deployment for resource: {}", resource.getMetadata().getName());
         Deployment deployment = createDeployment(resource);
-        log.info("Created Deployment spec: {}", deployment);
+        log.debug("Created Deployment spec: {}", deployment);
 
         Resource<Deployment> deploymentResource = kubernetesClient.apps().deployments()
                 .inNamespace(resource.getMetadata().getNamespace())
@@ -174,7 +187,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             deploymentResource.create(deployment);
             log.info("Created new Deployment: {}", resource.getMetadata().getName());
         } else {
-            deploymentResource.replace(deployment);
+            deploymentResource.patch(deployment);
             log.info("Updated existing Deployment: {}", resource.getMetadata().getName());
         }
     }
@@ -281,7 +294,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             log.info("create-tls-keystore init container enabled for {}.", resource.getMetadata().getName());
             initContainers.add(new ContainerBuilder()
                 .withName("create-tls-keystore")
-                .withImage("eclipse-temurin:17")
+                .withImage(TLS_INIT_IMAGE)
                 .withCommand("sh", "-c")
                 .withArgs("keytool -genkeypair -alias ams-mifos -keyalg RSA -keysize 2048 -storetype PKCS12 -keystore /tls/keystore.p12 -storepass changeit -keypass changeit -validity 3650 -dname \"CN=ams-mifos, OU=PaymentHub, O=Mifos, L=City, ST=State, C=US\" && echo 'Keystore created.' && ls -la /tls/")
                 .withVolumeMounts(new VolumeMountBuilder()
@@ -295,7 +308,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             log.info("wait-for-gateway init container enabled for {}.", resource.getMetadata().getName());
             initContainers.add(new ContainerBuilder()
                 .withName("wait-for-gateway")
-                .withImage("curlimages/curl:latest")
+                .withImage(CURL_INIT_IMAGE)
                 .withCommand("sh", "-c")
                 .withArgs("until curl -s http://phee-infra-zeebe-gateway:9600/actuator/health/liveness | grep -q '\"status\":\"UP\"'; do echo 'Waiting for Zeebe gateway...'; sleep 2; done; echo 'Zeebe gateway is up.'")
                 .build());
@@ -305,8 +318,9 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             log.info("wait-db init container enabled for {}.", resource.getMetadata().getName());
             initContainers.add(new ContainerBuilder()
                 .withName("wait-db")
-                .withImage("jwilder/dockerize")
-                .withArgs("-timeout=120s", "-wait", "tcp://operationsmysql:3306")
+                .withImage(WAIT_DB_IMAGE)
+                .withCommand("sh", "-c")
+                .withArgs("until nc -z operationsmysql 3306; do echo 'Waiting for MySQL...'; sleep 2; done; echo 'MySQL ready.'")
                 .build());
         }
 
@@ -366,8 +380,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         String namespace = resource.getMetadata().getNamespace();
 
         if (name == null || namespace == null) {
-            log.error("Name or namespace is null, cannot create deployment metadata.");
-            return null;  // Or handle it appropriately
+            throw new IllegalStateException("CR " + resource.getMetadata().getName() + " has null name or namespace");
         }
 
         // Create Deployment metadata with owner references

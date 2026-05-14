@@ -98,7 +98,9 @@ public class NetworkingUtils {
 
         return serviceSpecs.stream()
                 .map(serviceSpec -> {
-                    List<ServicePort> ports = serviceSpec.getPorts().stream()
+                    List<PaymentHubDeploymentSpec.Service.Port> rawPorts =
+                            serviceSpec.getPorts() != null ? serviceSpec.getPorts() : Collections.emptyList();
+                    List<ServicePort> ports = rawPorts.stream()
                             .map(portSpec -> new ServicePortBuilder()
                                     .withName(portSpec.getName())
                                     .withPort(portSpec.getPort())
@@ -171,14 +173,22 @@ public class NetworkingUtils {
     private Ingress createIngress(PaymentHubDeployment resource, String ingressName) {
         log.info("Creating Ingress spec for resource: {}", resource.getMetadata().getName());
 
-        List<PaymentHubDeploymentSpec.Ingress.TLS> tlsSpecs = resource.getSpec().getIngress().getTls();
+        PaymentHubDeploymentSpec.Ingress ingressSpec = resource.getSpec().getIngress();
+        if (ingressSpec == null) {
+            log.warn("ingressEnabled=true but no ingress spec defined for {}, creating empty Ingress", ingressName);
+            ingressSpec = new PaymentHubDeploymentSpec.Ingress();
+        }
+
+        List<PaymentHubDeploymentSpec.Ingress.TLS> tlsSpecs = ingressSpec.getTls();
         List<IngressTLS> ingressTlsList = tlsSpecs != null
                 ? tlsSpecs.stream()
                     .map(tls -> new IngressTLS(tls.getHosts(), tls.getSecretName()))
                     .collect(Collectors.toList())
                 : Collections.emptyList();
 
-        List<IngressRule> rules = resource.getSpec().getIngress().getRules().stream()
+        List<PaymentHubDeploymentSpec.Ingress.Rule> rawRules =
+                ingressSpec.getRules() != null ? ingressSpec.getRules() : Collections.emptyList();
+        List<IngressRule> rules = rawRules.stream()
                 .map(rule -> new IngressRuleBuilder()
                         .withHost(rule.getHost())
                         .withNewHttp()
@@ -200,25 +210,25 @@ public class NetworkingUtils {
                         .build()
                 ).collect(Collectors.toList());
 
-        Map<String, String> labels = resource.getSpec().getIngress().getLabels();
+        Map<String, String> labels = ingressSpec.getLabels();
         if (labels == null) {
-            labels = new HashMap<>();  
+            labels = new HashMap<>();
         }
 
         // Add default labels if they are not provided in the CR
         labels.putIfAbsent("app", resource.getMetadata().getName());
         labels.putIfAbsent("app.kubernetes.io/managed-by", "ph-ee-operator");
-        
+
         return new IngressBuilder()
                 .withNewMetadata()
                     .withName(ingressName)
                     .withNamespace(resource.getMetadata().getNamespace())
                     .withLabels(labels)
-                    .withAnnotations(resource.getSpec().getIngress().getAnnotations())
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withAnnotations(ingressSpec.getAnnotations())
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .withNewSpec()
-                    .withIngressClassName(resource.getSpec().getIngress().getClassName())
+                    .withIngressClassName(ingressSpec.getClassName())
                     .withTls(ingressTlsList)
                     .withRules(rules)
                 .endSpec()
