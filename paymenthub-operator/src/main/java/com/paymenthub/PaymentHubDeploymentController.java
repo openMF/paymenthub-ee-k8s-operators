@@ -310,7 +310,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
                 .withName("wait-for-gateway")
                 .withImage(CURL_INIT_IMAGE)
                 .withCommand("sh", "-c")
-                .withArgs("until curl -s http://phee-infra-zeebe-gateway:9600/actuator/health/liveness | grep -q '\"status\":\"UP\"'; do echo 'Waiting for Zeebe gateway...'; sleep 2; done; echo 'Zeebe gateway is up.'")
+                .withArgs("until curl -s http://paymenthub-infra-zeebe-gateway:9600/actuator/health/liveness | grep -q '\"status\":\"UP\"'; do echo 'Waiting for Zeebe gateway...'; sleep 2; done; echo 'Zeebe gateway is up.'")
                 .build());
         }
 
