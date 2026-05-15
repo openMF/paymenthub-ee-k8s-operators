@@ -5,7 +5,7 @@ FROM openjdk:21-slim
 WORKDIR /app
 
 # Copy the JAR file
-COPY target/ph-ee-operator-1.0.0.jar /app/ph-ee-operator-1.0.0.jar
+COPY target/paymenthub-operator-1.0.0.jar /app/paymenthub-operator-1.0.0.jar
 
 # Run the jar file
-ENTRYPOINT ["java", "-jar", "/app/ph-ee-operator-1.0.0.jar"]
+ENTRYPOINT ["java", "-jar", "/app/paymenthub-operator-1.0.0.jar"]

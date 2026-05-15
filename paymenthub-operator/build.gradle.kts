@@ -85,7 +85,7 @@ jib {
         }
     }
     to {
-        image = "openmf/phee-operator:${project.version}"
+        image = "openmf/paymenthub-operator:${project.version}"
     }
     container {
         jvmFlags = listOf("-Xms64m", "-Xmx256m")
