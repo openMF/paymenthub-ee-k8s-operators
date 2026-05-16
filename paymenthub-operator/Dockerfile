@@ -1,11 +1,5 @@
 # Use an official openjdk runtime as a parent image
-FROM openjdk:21-slim
-
-# Set the working directory
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
-
-# Copy the JAR file
-COPY target/paymenthub-operator-1.0.0.jar /app/paymenthub-operator-1.0.0.jar
-
-# Run the jar file
-ENTRYPOINT ["java", "-jar", "/app/paymenthub-operator-1.0.0.jar"]
+COPY build/libs/paymenthub-operator-*.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]

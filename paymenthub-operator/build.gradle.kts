@@ -78,7 +78,7 @@ tasks.register<Test>("integrationTest") {
 
 jib {
     from {
-        image = "openjdk:21-slim"
+        image = "eclipse-temurin:21-jre-jammy"
         platforms {
             platform { os = "linux"; architecture = "amd64" }
             platform { os = "linux"; architecture = "arm64" }
