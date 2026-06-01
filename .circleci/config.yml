@@ -3,8 +3,9 @@ version: 2.1
 # Master CircleCI config template for PHEE Java components.
 # Distributed to all repos by java_version_config_updater.py.
 # Template variables substituted by the script:
-#   cimg/openjdk:21.0.11  - e.g. cimg/openjdk:17.0
-#   {{CHECKSTYLE}}         - ./gradlew checkstyleMain (present or commented out)
+#   cimg/openjdk:21.0.11  - e.g. cimg/openjdk:21.0.11
+#   ./paymenthub-operator/gradlew            - ./gradlew or ./subdir/gradlew (detected from repo)
+#   {{CHECKSTYLE}}         - <gradlew> checkstyleMain (line removed if not declared)
 
 executors:
   java-executor:
@@ -56,7 +57,8 @@ jobs:
       - common-setup
       - run:
           name: Build application
-          command: ./gradlew bootJar
+          command: |
+            ./paymenthub-operator/gradlew bootJar
       - run:
           name: Build and push multi-arch image (linux/amd64 + linux/arm64)
           command: |
@@ -74,7 +76,7 @@ jobs:
       - run:
           name: Build application
           command: |
-            ./gradlew clean bootJar
+            ./paymenthub-operator/gradlew clean bootJar
       - run:
           name: Sanitize branch name and set commit tag
           command: |
@@ -101,7 +103,7 @@ jobs:
       - run:
           name: Build application
           command: |
-            ./gradlew clean bootJar
+            ./paymenthub-operator/gradlew clean bootJar
       - run:
           name: Build and push multi-arch image (linux/amd64 + linux/arm64)
           command: |
