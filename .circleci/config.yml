@@ -5,6 +5,7 @@ version: 2.1
 # Template variables substituted by the script:
 #   cimg/openjdk:21.0.11  - e.g. cimg/openjdk:21.0.11
 #   cd paymenthub-operator && ./gradlew            - ./gradlew or 'cd subdir && ./gradlew' (detected from repo)
+#   ./paymenthub-operator - . or ./subdir (same subdir as gradlew)
 #   {{CHECKSTYLE}}         - <gradlew> checkstyleMain (line removed if not declared)
 
 executors:
@@ -67,7 +68,7 @@ jobs:
               --push \
               --platform linux/amd64,linux/arm64 \
               -t "$DOCKER_ORG_LOWER/$DOCKER_REPO_LOWER:$CIRCLE_TAG" \
-              .
+              ./paymenthub-operator
 
   build_and_push_branch_image:
     executor: java-executor
@@ -94,7 +95,7 @@ jobs:
               --platform linux/amd64,linux/arm64 \
               -t "$DOCKER_ORG_LOWER/$DOCKER_REPO_LOWER:${SANITIZED_BRANCH}-latest" \
               -t "$DOCKER_ORG_LOWER/$DOCKER_REPO_LOWER:${SANITIZED_BRANCH}-${SHORT_SHA}" \
-              .
+              ./paymenthub-operator
 
   build_and_push_latest_image:
     executor: java-executor
@@ -112,7 +113,7 @@ jobs:
               --push \
               --platform linux/amd64,linux/arm64 \
               -t "$DOCKER_ORG_LOWER/$DOCKER_REPO_LOWER:latest" \
-              .
+              ./paymenthub-operator
 
 workflows:
   version: 2
