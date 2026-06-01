@@ -43,6 +43,18 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.3")
 }
 
+tasks.register<Jar>("bootJar") {
+    group = "build"
+    description = "Assembles a self-contained executable JAR with all runtime dependencies."
+    archiveClassifier.set("boot")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes("Main-Class" to application.mainClass.get())
+    }
+    from(sourceSets.main.get().output)
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+}
+
 tasks.jar {
     // Add Main-Class and Class-Path to the manifest so `java -jar` works without a fat JAR.
     // Dependencies are copied to build/libs/ alongside the main JAR during assembly.
