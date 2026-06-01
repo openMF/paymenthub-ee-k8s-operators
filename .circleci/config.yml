@@ -4,7 +4,7 @@ version: 2.1
 # Distributed to all repos by java_version_config_updater.py.
 # Template variables substituted by the script:
 #   cimg/openjdk:21.0.11  - e.g. cimg/openjdk:21.0.11
-#   ./paymenthub-operator/gradlew            - ./gradlew or ./subdir/gradlew (detected from repo)
+#   cd paymenthub-operator && ./gradlew            - ./gradlew or 'cd subdir && ./gradlew' (detected from repo)
 #   {{CHECKSTYLE}}         - <gradlew> checkstyleMain (line removed if not declared)
 
 executors:
@@ -58,7 +58,7 @@ jobs:
       - run:
           name: Build application
           command: |
-            ./paymenthub-operator/gradlew bootJar
+            cd paymenthub-operator && ./gradlew bootJar
       - run:
           name: Build and push multi-arch image (linux/amd64 + linux/arm64)
           command: |
@@ -76,7 +76,7 @@ jobs:
       - run:
           name: Build application
           command: |
-            ./paymenthub-operator/gradlew clean bootJar
+            cd paymenthub-operator && ./gradlew clean bootJar
       - run:
           name: Sanitize branch name and set commit tag
           command: |
@@ -103,7 +103,7 @@ jobs:
       - run:
           name: Build application
           command: |
-            ./paymenthub-operator/gradlew clean bootJar
+            cd paymenthub-operator && ./gradlew clean bootJar
       - run:
           name: Build and push multi-arch image (linux/amd64 + linux/arm64)
           command: |
