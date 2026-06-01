@@ -53,6 +53,10 @@ tasks.register<Jar>("bootJar") {
     }
     from(sourceSets.main.get().output)
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    // Exclude signature files from signed dependency JARs (e.g. BouncyCastle). When
+    // their contents are repacked into a fat JAR the digests no longer match and the
+    // JVM throws SecurityException: Invalid signature file digest for Manifest.
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
 }
 
 tasks.jar {
