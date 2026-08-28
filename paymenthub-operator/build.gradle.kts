@@ -18,16 +18,24 @@ application {
 
 repositories {
     mavenCentral()
+    maven { url = uri("https://repo.maven.apache.org/maven2/") }
+    maven { url = uri("https://mifos.jfrog.io/artifactory/phee-gradle-local") }
+    maven { url = uri("https://mifos.jfrog.io/artifactory/mifosx-gradle-local") }
 }
 
 dependencies {
+    // Mifos Platform BOM pins Spring Boot 3.4, Camel 4, Zeebe 8, Jakarta EE 10
+    // and every other shared library version. Do NOT hardcode managed versions.
+    // This is a deployable application (leaf node), so use enforcedPlatform().
+    implementation(enforcedPlatform("org.mifos:paymenthub-ee-bom:2.0.0-SNAPSHOT"))
+
     implementation("javax.inject:javax.inject:1")
     implementation("io.fabric8:kubernetes-client:6.13.1")
     implementation("io.javaoperatorsdk:operator-framework-core:4.9.2")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.2")
-    implementation("org.slf4j:slf4j-api:2.0.9")
-    runtimeOnly("org.slf4j:slf4j-simple:2.0.9")
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
+    implementation("org.slf4j:slf4j-api")
+    runtimeOnly("org.slf4j:slf4j-simple")
     runtimeOnly("org.bouncycastle:bcpkix-jdk18on:1.78.1")
 
     testImplementation("io.fabric8:kubernetes-server-mock:6.13.1")
@@ -36,11 +44,11 @@ dependencies {
     testImplementation("io.javaoperatorsdk:operator-framework-junit-5:4.9.2")
     testImplementation("io.cucumber:cucumber-java:7.18.0")
     testImplementation("io.cucumber:cucumber-junit-platform-engine:7.18.0")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
-    testImplementation("org.junit.platform:junit-platform-suite:1.10.3")
-    testImplementation("org.mockito:mockito-core:5.12.0")
-    testImplementation("org.assertj:assertj-core:3.26.0")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.3")
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.junit.platform:junit-platform-suite")
+    testImplementation("org.mockito:mockito-core")
+    testImplementation("org.assertj:assertj-core")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
 }
 
 tasks.register<Jar>("bootJar") {
