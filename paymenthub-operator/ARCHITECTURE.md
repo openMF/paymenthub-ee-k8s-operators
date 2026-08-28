@@ -28,7 +28,7 @@ paymenthub-operator/
 │   └── test/
 │       ├── java/                          ← unit tests (JUnit 5 + Mockito)
 │       └── resources/features/            ← BDD scenarios (Cucumber, 11 feature files)
-├── build.gradle.kts                       ← Gradle build; Java 21; Jib for image publishing
+├── build.gradle.kts                       ← Gradle build; Java 21; Lombok; Jib for local image builds
 ├── ARCHITECTURE.md
 ├── DEVELOPER_GUIDE.md
 └── README.md
