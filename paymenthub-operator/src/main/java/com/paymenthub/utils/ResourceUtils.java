@@ -1,14 +1,17 @@
 package com.paymenthub.utils;
 
-import io.fabric8.kubernetes.api.model.*;
+import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
+import io.fabric8.kubernetes.api.model.Secret;
+import io.fabric8.kubernetes.api.model.SecretBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.Resource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Base64;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.paymenthub.customresource.PaymentHubDeployment;
 
@@ -17,16 +20,16 @@ import com.paymenthub.customresource.PaymentHubDeployment;
  */
 public class ResourceUtils {
     private static final Logger log = LoggerFactory.getLogger(ResourceUtils.class);
-    private final KubernetesClient kubernetesClient;
 
-    public ResourceUtils(KubernetesClient kubernetesClient) {
-        this.kubernetesClient = kubernetesClient;
+    private static final Map<String, String> DEFAULT_SECRET_DATA = Map.of("database-password", "password");
+
+    private ResourceUtils() {
     }
 
     /**
      * Reconciles the ConfigMap for the given custom resource. Creates or updates the ConfigMap as necessary.
      */
-    public void reconcileConfigmap(PaymentHubDeployment resource) {
+    public static void reconcileConfigmap(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String name = resource.getMetadata().getName() + "-configmap";
         log.info("Reconciling ConfigMap for resource: {}", resource.getMetadata().getName());
         ConfigMap configMap = createConfigMap(resource, name);
@@ -44,7 +47,7 @@ public class ResourceUtils {
         }
     }
 
-    private ConfigMap createConfigMap(PaymentHubDeployment resource, String name) {
+    private static ConfigMap createConfigMap(PaymentHubDeployment resource, String name) {
         String domain = resource.getSpec().getDomain();
 
         Map<String, String> data = new HashMap<>();
@@ -57,37 +60,11 @@ public class ResourceUtils {
             "auth.enabled false\n" +
             "auth.tenant phdefault");
 
-        // The operations-web image's default nginx config uses `aio on`, which calls
-        // io_setup() — a Linux AIO syscall not available on Colima/macOS kernels.
-        // Override default.conf with a config that omits aio, matching the Helm chart.
-        if ("ph-ee-operations-web".equals(resource.getMetadata().getName())) {
-            data.put("default.conf",
-                "server {\n" +
-                "    listen       80;\n" +
-                "    server_name  localhost;\n" +
-                "    root   /usr/share/nginx/html;\n" +
-                "    index  index.html index.htm;\n" +
-                "\n" +
-                "    sendfile off;\n" +
-                "\n" +
-                "    location / {\n" +
-                "        try_files $uri $uri/ /index.html;\n" +
-                "    }\n" +
-                "\n" +
-                "    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {\n" +
-                "        expires 1y;\n" +
-                "        add_header Cache-Control \"public, immutable\";\n" +
-                "    }\n" +
-                "\n" +
-                "    location ~* (index\\.html|env\\.js)$ {\n" +
-                "        add_header Cache-Control \"no-store, no-cache, must-revalidate\";\n" +
-                "    }\n" +
-                "\n" +
-                "    error_page   500 502 503 504  /50x.html;\n" +
-                "    location = /50x.html {\n" +
-                "        root   /usr/share/nginx/html;\n" +
-                "    }\n" +
-                "}\n");
+        // Any additional literal key/value pairs the CR declares (e.g. an nginx
+        // default.conf override) are merged in as-is — the operator has no
+        // per-component knowledge of what a given CR needs here.
+        if (resource.getSpec().getConfigMapData() != null) {
+            data.putAll(resource.getSpec().getConfigMapData());
         }
 
         return new ConfigMapBuilder()
@@ -103,7 +80,7 @@ public class ResourceUtils {
     /**
      * Reconciles the Secret for the given custom resource. Creates or updates the Secret as necessary.
      */
-    public void reconcileSecret(PaymentHubDeployment resource) {
+    public static void reconcileSecret(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String secretName = resource.getMetadata().getName() + "-secret";
         log.info("Reconciling Secret for resource: {}", resource.getMetadata().getName());
         Secret secret = createSecret(resource, secretName);
@@ -121,31 +98,19 @@ public class ResourceUtils {
         }
     }
 
-    private Secret createSecret(PaymentHubDeployment resource, String secretName) {
-        SecretBuilder secretBuilder = new SecretBuilder()
+    private static Secret createSecret(PaymentHubDeployment resource, String secretName) {
+        Map<String, String> secretData = resource.getSpec().getSecretData();
+        if (secretData == null || secretData.isEmpty()) {
+            secretData = DEFAULT_SECRET_DATA;
+        }
+
+        return new SecretBuilder()
                 .withNewMetadata()
                     .withName(secretName)
                     .withNamespace(resource.getMetadata().getNamespace())
                     .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
-                .endMetadata();
-
-        if ("ph-ee-connector-bulk".equals(resource.getMetadata().getName())) {
-            secretBuilder
-                .addToData("aws-access-key", Base64.getEncoder().encodeToString("root".getBytes()))
-                .addToData("aws-secret-key", Base64.getEncoder().encodeToString("password".getBytes()))
-                .addToData("aws-region", Base64.getEncoder().encodeToString("ap-south-1".getBytes()));
-            return secretBuilder.build();
-        }
-
-        if ("message-gateway".equals(resource.getMetadata().getName())) {
-            secretBuilder
-                .addToData("api-key", Base64.getEncoder().encodeToString("<api-key>".getBytes()))
-                .addToData("project-id", Base64.getEncoder().encodeToString("<project-id>".getBytes()))
-                .addToData("database-password", Base64.getEncoder().encodeToString("password".getBytes()));
-            return secretBuilder.build();
-        }
-
-        secretBuilder.addToData("database-password", Base64.getEncoder().encodeToString("password".getBytes()));
-        return secretBuilder.build();
+                .endMetadata()
+                .withStringData(secretData)
+                .build();
     }
 }

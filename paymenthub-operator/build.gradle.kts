@@ -29,6 +29,9 @@ dependencies {
     // This is a deployable application (leaf node), so use enforcedPlatform().
     implementation(enforcedPlatform("org.mifos:paymenthub-ee-bom:2.0.0-SNAPSHOT"))
 
+    compileOnly("org.projectlombok:lombok:1.18.34")
+    annotationProcessor("org.projectlombok:lombok:1.18.34")
+
     implementation("javax.inject:javax.inject:1")
     implementation("io.fabric8:kubernetes-client:6.13.1")
     implementation("io.javaoperatorsdk:operator-framework-core:4.9.2")

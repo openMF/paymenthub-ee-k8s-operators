@@ -7,7 +7,7 @@ This document provides a conceptual overview of the PHEE Operator — what it is
 This repo contains operator **source code only**. Deployment manifests (CRD, CRs, RBAC) live in [mifos-gazelle](https://github.com/openMF/mifos-gazelle).
 
 ```
-PHEE-operator/
+paymenthub-operator/
 ├── src/
 │   ├── main/java/com/paymenthub/
 │   │   ├── customresource/
@@ -110,7 +110,7 @@ Handles graceful deletion, including cluster-scoped RBAC cleanup that owner refe
 | `NetworkingUtils` | `utils/NetworkingUtils.java` | Creates, updates, deletes Services and Ingresses |
 | `OwnerReferenceUtils` | `utils/OwnerReferenceUtils.java` | Sets owner references for automatic child-resource garbage collection |
 | `RbacUtils` | `utils/RbacUtils.java` | Reconciles ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding |
-| `ResourceUtils` | `utils/ResourceUtils.java` | Reconciles ConfigMaps, Secrets (base64-encoded), and PersistentVolumeClaims |
+| `ResourceUtils` | `utils/ResourceUtils.java` | Reconciles ConfigMaps and Secrets. Both are CR-driven: `spec.configMapData` merges extra literal key/value pairs into the generated ConfigMap, and `spec.secretData` supplies the generated Secret's `stringData` (falling back to a single `database-password` key when a CR doesn't set it) |
 | `StatusUpdateUtil` | `utils/StatusUpdateUtil.java` | Updates the CR status subresource (disabled / error / ready with replica count) |
 
 ### Custom Resource Model Classes
@@ -118,7 +118,7 @@ Handles graceful deletion, including cluster-scoped RBAC cleanup that owner refe
 | Class | File | Purpose |
 |-------|------|---------|
 | `PaymentHubDeployment` | `customresource/PaymentHubDeployment.java` | Extends `CustomResource`, implements `Namespaced`; annotated with API group, version, and plural name so Fabric8 recognises it |
-| `PaymentHubDeploymentSpec` | `customresource/PaymentHubDeploymentSpec.java` | Spec fields with getters/setters: `enabled`, `image`, `replicas`, `containerPort`, `domain`, `labels`, `resources`, `livenessProbe`, `readinessProbe`, `rbacEnabled`, `secretEnabled`, `configMapEnabled`, `ingressEnabled`, `initContainerEnabled`, `waitForGatewayEnabled`, `tlsKeystoreEnabled`, `volMount`, `ingress`, `services`, `environment` |
+| `PaymentHubDeploymentSpec` | `customresource/PaymentHubDeploymentSpec.java` | Spec fields (Lombok-generated getters/setters): `enabled`, `image`, `replicas`, `containerPort`, `domain`, `labels`, `resources`, `livenessProbe`, `readinessProbe`, `rbacEnabled`, `secretEnabled`, `configMapEnabled`, `ingressEnabled`, `initContainerEnabled`, `waitForGatewayEnabled`, `tlsKeystoreEnabled`, `volMount` (including optional `volMount.mounts`, a list of `{subPath, mountPath}` pairs), `ingress`, `services`, `environment`, `configMapData`, `secretData` |
 | `PaymentHubDeploymentStatus` | `customresource/PaymentHubDeploymentStatus.java` | Status fields: `availableReplicas`, `ready`, `lastAppliedImage`, `errorMessage` |
 
 ## Deployment
@@ -131,7 +131,7 @@ The mifos-gazelle `phee.sh` script applies the CRD, RBAC, and operator Deploymen
 
 - **Language**: Java — strong typing, extensive ecosystem, and natural fit for the Java Operator SDK.
 - **Framework**: [Java Operator SDK (JOSDK)](https://javaoperatorsdk.io/) — handles watch loops, event queuing, and retry back-off, letting the controller focus on reconciliation logic.
-- **Build**: Gradle + [Jib](https://github.com/GoogleContainerTools/jib) — reproducible multi-platform (linux/amd64, linux/arm64) container images without a Docker daemon in CI.
+- **Build**: Gradle. CI builds the image via `./gradlew bootJar` followed by `docker buildx build` against this repo's `Dockerfile`, producing multi-platform (linux/amd64, linux/arm64) images. [Jib](https://github.com/GoogleContainerTools/jib) is also wired into the Gradle build for local/manual image builds (see the operator README's "Building the Operator Image" section) but isn't what CI uses to publish images.
 - **CRD structure**: Designed to be extensible — adding a new spec field requires a one-line CRD change, a getter/setter in `PaymentHubDeploymentSpec`, and usage in the relevant util class.
 - **Controller logic**: Focused on idempotency and modularity — each utility class owns one resource type, making the reconciliation loop easy to read and test independently.
 - **Deployment manifests in mifos-gazelle**: Keeping CRDs and CRs in the deployment tool (rather than this repo) avoids drift between what the operator expects and what gets applied to the cluster.

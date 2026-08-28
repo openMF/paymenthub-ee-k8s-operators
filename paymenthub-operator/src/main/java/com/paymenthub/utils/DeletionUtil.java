@@ -1,11 +1,12 @@
 package com.paymenthub.utils;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.api.model.Service; 
+import io.fabric8.kubernetes.api.model.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.paymenthub.customresource.PaymentHubDeployment;
-import java.util.List; 
+import com.paymenthub.customresource.PaymentHubDeploymentSpec;
+import java.util.List;
 
 
 /**
@@ -176,15 +177,14 @@ public class DeletionUtil {
     public static void deleteService(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String namespace = resource.getMetadata().getNamespace();
         
-        // Use fully qualified name for custom Service class
-        List<com.paymenthub.customresource.PaymentHubDeploymentSpec.Service> services = resource.getSpec().getServices();
-        
+        List<PaymentHubDeploymentSpec.Service> services = resource.getSpec().getServices();
+
         if (services != null && !services.isEmpty()) {
-            for (com.paymenthub.customresource.PaymentHubDeploymentSpec.Service service : services) {
-                String serviceName = service.getName(); // Use fully qualified name for custom Service class
-                
+            for (PaymentHubDeploymentSpec.Service service : services) {
+                String serviceName = service.getName();
+
                 // Check if the service exists in the namespace
-                io.fabric8.kubernetes.api.model.Service existingService = kubernetesClient.services()
+                Service existingService = kubernetesClient.services()
                         .inNamespace(namespace)
                         .withName(serviceName)
                         .get();

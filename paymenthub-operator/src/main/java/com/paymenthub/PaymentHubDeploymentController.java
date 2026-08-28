@@ -1,14 +1,28 @@
 package com.paymenthub;
 
-// Kubernetes API model imports
-import io.fabric8.kubernetes.api.model.*;  
-import io.fabric8.kubernetes.api.model.apps.*;  
- 
-// Kubernetes client imports
-import io.fabric8.kubernetes.client.KubernetesClient; 
-import io.fabric8.kubernetes.client.dsl.Resource;  
+import io.fabric8.kubernetes.api.model.ConfigMapVolumeSourceBuilder;
+import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.api.model.ContainerBuilder;
+import io.fabric8.kubernetes.api.model.ContainerPortBuilder;
+import io.fabric8.kubernetes.api.model.EmptyDirVolumeSource;
+import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
+import io.fabric8.kubernetes.api.model.PodSpec;
+import io.fabric8.kubernetes.api.model.PodSpecBuilder;
+import io.fabric8.kubernetes.api.model.PodTemplateSpec;
+import io.fabric8.kubernetes.api.model.PodTemplateSpecBuilder;
+import io.fabric8.kubernetes.api.model.Volume;
+import io.fabric8.kubernetes.api.model.VolumeBuilder;
+import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
+import io.fabric8.kubernetes.api.model.apps.Deployment;
+import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
+import io.fabric8.kubernetes.api.model.apps.DeploymentSpec;
+import io.fabric8.kubernetes.api.model.apps.DeploymentSpecBuilder;
 
-// Operator SDK imports
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.Resource;
+
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.ControllerConfiguration;
 import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
@@ -16,25 +30,24 @@ import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.api.reconciler.Cleaner;
 import io.javaoperatorsdk.operator.api.reconciler.DeleteControl;
 
-// Logging imports
-import org.slf4j.Logger;  
-import org.slf4j.LoggerFactory;  
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-// Custom classes and utils
 import com.paymenthub.customresource.PaymentHubDeployment;
-import com.paymenthub.utils.LoggingUtil;  
-import com.paymenthub.utils.StatusUpdateUtil;   
-import com.paymenthub.utils.DeletionUtil;  
-import com.paymenthub.utils.DeploymentUtils;  
-import com.paymenthub.utils.RbacUtils;  
-import com.paymenthub.utils.ResourceUtils;  
+import com.paymenthub.customresource.PaymentHubDeploymentSpec;
+import com.paymenthub.utils.LoggingUtil;
+import com.paymenthub.utils.StatusUpdateUtil;
+import com.paymenthub.utils.DeletionUtil;
+import com.paymenthub.utils.DeploymentUtils;
+import com.paymenthub.utils.RbacUtils;
+import com.paymenthub.utils.ResourceUtils;
 import com.paymenthub.utils.NetworkingUtils;
 import com.paymenthub.utils.OwnerReferenceUtils;
 
-// Java utils
-import java.util.*;
-
-
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @ControllerConfiguration
 public class PaymentHubDeploymentController implements Reconciler<PaymentHubDeployment>, Cleaner<PaymentHubDeployment> {
@@ -43,33 +56,16 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
     private static final String CURL_INIT_IMAGE = "curlimages/curl:8.7.1";
     private static final String WAIT_DB_IMAGE   = "busybox:1.36";
 
-
-    /**
-     * The PaymentHubDeploymentController class is responsible for managing Kubernetes resources related to the
-     * `PaymentHubDeployment` custom resource. It uses various utilities and the Kubernetes client for operations.
-     * 
-     * - {@code log} is a static logger for logging information, warnings, and errors.
-     * - {@code kubernetesClient} is used to interact with the Kubernetes API server to manage resources.
-     * - {@code rbacUtils} provides utility methods for handling RBAC (Role-Based Access Control) related operations.
-     * - {@code resourceUtils} offers utility methods for creating and managing Kubernetes resources such as ConfigMaps and Secrets.
-     * - {@code networkingUtils} includes utility methods for managing networking components like Services and Ingresses.
-     */
     private static final Logger log = LoggerFactory.getLogger(PaymentHubDeploymentController.class);
     private final KubernetesClient kubernetesClient;
-    private final RbacUtils rbacUtils;
-    private final ResourceUtils resourceUtils;
-    private final NetworkingUtils networkingUtils;
 
     /**
-     * Constructor for initializing the PaymentHubDeploymentController with the necessary clients and utilities.
-     * 
+     * Constructor for initializing the PaymentHubDeploymentController with the necessary Kubernetes client.
+     *
      * @param kubernetesClient The Kubernetes client used for interacting with the Kubernetes API server.
      */
     public PaymentHubDeploymentController(KubernetesClient kubernetesClient) {
         this.kubernetesClient = kubernetesClient;
-        this.rbacUtils = new RbacUtils(kubernetesClient);
-        this.resourceUtils = new ResourceUtils(kubernetesClient);
-        this.networkingUtils = new NetworkingUtils(kubernetesClient);
     }
 
     /**
@@ -102,12 +98,12 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
                 DeletionUtil.deleteRbacResources(kubernetesClient, resource);
             } else {
                 // INFO level log to indicate RBAC reconciliation start
-                log.info("Reconciling RBAC resources for {}.", resourceName); 
-                rbacUtils.reconcileServiceAccount(resource);
-                rbacUtils.reconcileRole(resource);
-                rbacUtils.reconcileRoleBinding(resource);
-                rbacUtils.reconcileClusterRole(resource);
-                rbacUtils.reconcileClusterRoleBinding(resource);
+                log.info("Reconciling RBAC resources for {}.", resourceName);
+                RbacUtils.reconcileServiceAccount(kubernetesClient, resource);
+                RbacUtils.reconcileRole(kubernetesClient, resource);
+                RbacUtils.reconcileRoleBinding(kubernetesClient, resource);
+                RbacUtils.reconcileClusterRole(kubernetesClient, resource);
+                RbacUtils.reconcileClusterRoleBinding(kubernetesClient, resource);
             }
 
             // Check and reconcile Secrets
@@ -117,8 +113,8 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             } else {
                 // DEBUG level log to indicate Secret reconciliation
                 log.debug("Reconciling Secret for {}.", resourceName);
-                resourceUtils.reconcileSecret(resource);
-            } 
+                ResourceUtils.reconcileSecret(kubernetesClient, resource);
+            }
 
             // Check and reconcile ConfigMaps
             if (resource.getSpec().getConfigMapEnabled() == null || !resource.getSpec().getConfigMapEnabled()) {
@@ -127,11 +123,11 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             } else {
                 // DEBUG level log to indicate ConfigMap reconciliation
                 log.debug("Reconciling ConfigMap for {}.", resourceName);
-                resourceUtils.reconcileConfigmap(resource);
+                ResourceUtils.reconcileConfigmap(kubernetesClient, resource);
             }
 
             // Always reconcile Services when enabled
-            networkingUtils.reconcileServices(resource);
+            NetworkingUtils.reconcileServices(kubernetesClient, resource);
 
             // Reconcile Ingress conditionally
             if (resource.getSpec().getIngressEnabled() == null || !resource.getSpec().getIngressEnabled()) {
@@ -139,7 +135,7 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
                 DeletionUtil.deleteIngressResources(kubernetesClient, resource);
             } else {
                 log.info("Reconciling Ingress for {}.", resourceName);
-                networkingUtils.reconcileIngress(resource);
+                NetworkingUtils.reconcileIngress(kubernetesClient, resource);
             }
 
             // Always reconcile the Deployment itself
@@ -157,7 +153,6 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         }
     }
 
-    
     /**
      * Called when a PaymentHubDeployment CR is deleted directly. Cleans up cluster-scoped
      * resources (ClusterRole, ClusterRoleBinding) that owner-references cannot GC automatically.
@@ -192,23 +187,22 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         }
     }
 
-
     /**
      * Creates a Kubernetes Deployment object based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the deployment configuration.
      * @return The created Deployment object, or null if critical fields are missing.
      */
     private Deployment createDeployment(PaymentHubDeployment resource) {
         log.info("Creating Deployment spec for resource: {}", resource.getMetadata().getName());
 
-        // Full label set for Deployment metadata and pod template
+        // Full label set for Deployment metadata and pod template. Copy defensively —
+        // resource.getSpec().getLabels() is the live map on the (possibly cached) CR,
+        // and must never be mutated in place.
         Map<String, String> labels = resource.getSpec().getLabels();
-        if (labels == null) {
-            labels = new HashMap<>();
-        }
+        labels = labels == null ? new HashMap<>() : new HashMap<>(labels);
         labels.putIfAbsent("app", resource.getMetadata().getName());
-        labels.putIfAbsent("app.kubernetes.io/managed-by", "ph-ee-operator");
+        labels.putIfAbsent("app.kubernetes.io/managed-by", "paymenthub-operator");
 
         // Selector uses only the stable "app" label — never include managed-by here,
         // as spec.selector is immutable and adding it breaks Helm-pre-created Deployments.
@@ -240,38 +234,31 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         // Add volume mount conditionally
         if (resource.getSpec().getVolMount() != null && Boolean.TRUE.equals(resource.getSpec().getVolMount().getEnabled())) {
             String volMountName = resource.getSpec().getVolMount().getName();
-            String deploymentName = resource.getMetadata().getName();
 
             if (volMountName != null) {
-                VolumeMountBuilder volumeMountBuilder = new VolumeMountBuilder().withName(volMountName);
+                List<PaymentHubDeploymentSpec.VolMount.SubPathMount> subPathMounts = resource.getSpec().getVolMount().getMounts();
 
-                // Check the deployment name and set the appropriate path
-                if ("ph-ee-operations-web".equals(deploymentName)) {
-                    // Mount app config and the nginx default.conf override (same ConfigMap,
-                    // two subPaths). The nginx override suppresses aio/io_setup which is
-                    // unavailable on Colima/macOS kernels.
-                    containerBuilder.withVolumeMounts(
-                        new VolumeMountBuilder()
+                if (subPathMounts != null && !subPathMounts.isEmpty()) {
+                    // CR declares one or more explicit subPath mounts from the same
+                    // ConfigMap-backed volume (e.g. multiple files at distinct paths).
+                    for (PaymentHubDeploymentSpec.VolMount.SubPathMount mount : subPathMounts) {
+                        containerBuilder.addToVolumeMounts(new VolumeMountBuilder()
                             .withName(volMountName)
-                            .withMountPath("/usr/share/nginx/html/assets/configuration.properties")
-                            .withSubPath("configuration.properties")
-                            .build(),
-                        new VolumeMountBuilder()
-                            .withName(volMountName)
-                            .withMountPath("/etc/nginx/conf.d/default.conf")
-                            .withSubPath("default.conf")
-                            .build()
-                    );
+                            .withMountPath(mount.getMountPath())
+                            .withSubPath(mount.getSubPath())
+                            .build());
+                    }
                 } else {
-                    // For other deployments, use the generic /config
-                    volumeMountBuilder.withMountPath("/config");
-                    containerBuilder.withVolumeMounts(volumeMountBuilder.build());
+                    // Default: a single generic mount at /config.
+                    containerBuilder.addToVolumeMounts(new VolumeMountBuilder()
+                        .withName(volMountName)
+                        .withMountPath("/config")
+                        .build());
                 }
             } else {
                 log.warn("Volume mount name is null, skipping volume mount.");
             }
         }
-
 
         // Add /tls volume mount to main container when TLS keystore is required (must be before build())
         if (Boolean.TRUE.equals(resource.getSpec().getTlsKeystoreEnabled())) {
@@ -400,6 +387,5 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             .withSpec(deploymentSpec)
             .build();
     }
-
 
 }

@@ -21,7 +21,7 @@ The `phee.sh` deployer script builds the operator Deployment manifest dynamicall
 To deploy PHEE, run from the mifos-gazelle root:
 
 ```bash
-sudo ./run.sh -u $USER -m deploy -a phee
+./run.sh -m deploy -a paymenthub
 ```
 
 ## Building the Operator Image
@@ -32,9 +32,11 @@ sudo ./run.sh -u $USER -m deploy -a phee
 
 # Build to local Docker daemon only (for k3s import)
 ./gradlew jibDockerBuild
-docker save ph-ee-operator:latest -o ph-ee-operator.tar
-sudo k3s ctr images import ph-ee-operator.tar
+docker save openmf/paymenthub-operator:1.0.0 -o paymenthub-operator.tar
+sudo k3s ctr images import paymenthub-operator.tar
 ```
+
+The image name/tag above must match `jib.to.image` and `version` in `build.gradle.kts`.
 
 ## Architecture
 

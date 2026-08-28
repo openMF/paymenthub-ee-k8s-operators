@@ -1,33 +1,39 @@
 package com.paymenthub.utils;
 
-import io.fabric8.kubernetes.api.model.*;
-import io.fabric8.kubernetes.api.model.rbac.*;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRole;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBinding;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBindingBuilder;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBuilder;
+import io.fabric8.kubernetes.api.model.rbac.Role;
+import io.fabric8.kubernetes.api.model.rbac.RoleBinding;
+import io.fabric8.kubernetes.api.model.rbac.RoleBindingBuilder;
+import io.fabric8.kubernetes.api.model.rbac.RoleBuilder;
+import io.fabric8.kubernetes.api.model.rbac.RoleRefBuilder;
+import io.fabric8.kubernetes.api.model.rbac.SubjectBuilder;
+import io.fabric8.kubernetes.api.model.ServiceAccount;
+import io.fabric8.kubernetes.api.model.ServiceAccountBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.Resource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.util.*;
 
-import com.paymenthub.customresource.PaymentHubDeployment; 
-import com.paymenthub.utils.OwnerReferenceUtils;
+import com.paymenthub.customresource.PaymentHubDeployment;
 
 public class RbacUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RbacUtils.class);
-    private final KubernetesClient kubernetesClient;
 
-    public RbacUtils(KubernetesClient kubernetesClient) {
-        this.kubernetesClient = kubernetesClient;
+    private RbacUtils() {
     }
 
     /**
      * Reconciles the ServiceAccount for the given custom resource.
      * This method ensures that the ServiceAccount exists and is up-to-date based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the ServiceAccount configuration.
      */
-    public void reconcileServiceAccount(PaymentHubDeployment resource) {
+    public static void reconcileServiceAccount(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String saName = resource.getMetadata().getName() + "-sa";
         log.info("Reconciling ServiceAccount for resource: {}", resource.getMetadata().getName());
         ServiceAccount serviceAccount = createServiceAccount(resource, saName);
@@ -46,20 +52,13 @@ public class RbacUtils {
         }
     }
 
-    /**
-     * Creates a Kubernetes ServiceAccount object based on the custom resource specifications.
-     * 
-     * @param resource The custom resource specifying the ServiceAccount configuration.
-     * @param saName The name to assign to the ServiceAccount.
-     * @return The created ServiceAccount object.
-     */
-    private ServiceAccount createServiceAccount(PaymentHubDeployment resource, String saName) {
+    private static ServiceAccount createServiceAccount(PaymentHubDeployment resource, String saName) {
         log.debug("Creating ServiceAccount spec for resource: {}", resource.getMetadata().getName());
         return new ServiceAccountBuilder()
                 .withNewMetadata()
                     .withName(saName)
                     .withNamespace(resource.getMetadata().getNamespace())
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .build();
     }
@@ -67,10 +66,10 @@ public class RbacUtils {
     /**
      * Reconciles the Role for the given custom resource.
      * This method ensures that the Role exists and is up-to-date based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the Role configuration.
      */
-    public void reconcileRole(PaymentHubDeployment resource) {
+    public static void reconcileRole(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String roleName = resource.getMetadata().getName() + "-role";
         log.info("Reconciling Role for resource: {}", resource.getMetadata().getName());
         Role role = createRole(resource, roleName);
@@ -89,20 +88,13 @@ public class RbacUtils {
         }
     }
 
-    /**
-     * Creates a Kubernetes Role object based on the custom resource specifications.
-     * 
-     * @param resource The custom resource specifying the Role configuration.
-     * @param roleName The name to assign to the Role.
-     * @return The created Role object.
-     */
-    private Role createRole(PaymentHubDeployment resource, String roleName) {
+    private static Role createRole(PaymentHubDeployment resource, String roleName) {
         log.debug("Creating Role spec for resource: {}", resource.getMetadata().getName());
         return new RoleBuilder()
                 .withNewMetadata()
                     .withName(roleName)
                     .withNamespace(resource.getMetadata().getNamespace())
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .addNewRule()
                     .withApiGroups("")
@@ -115,10 +107,10 @@ public class RbacUtils {
     /**
      * Reconciles the RoleBinding for the given custom resource.
      * This method ensures that the RoleBinding exists and is up-to-date based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the RoleBinding configuration.
      */
-    public void reconcileRoleBinding(PaymentHubDeployment resource) {
+    public static void reconcileRoleBinding(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String roleBindingName = resource.getMetadata().getName() + "-rolebinding";
         log.info("Reconciling RoleBinding for resource: {}", resource.getMetadata().getName());
         RoleBinding roleBinding = createRoleBinding(resource, roleBindingName);
@@ -137,20 +129,13 @@ public class RbacUtils {
         }
     }
 
-    /**
-     * Creates a Kubernetes RoleBinding object based on the custom resource specifications.
-     * 
-     * @param resource The custom resource specifying the RoleBinding configuration.
-     * @param roleBindingName The name to assign to the RoleBinding.
-     * @return The created RoleBinding object.
-     */
-    private RoleBinding createRoleBinding(PaymentHubDeployment resource, String roleBindingName) {
+    private static RoleBinding createRoleBinding(PaymentHubDeployment resource, String roleBindingName) {
         log.debug("Creating RoleBinding spec for resource: {}", resource.getMetadata().getName());
         return new RoleBindingBuilder()
                 .withNewMetadata()
                     .withName(roleBindingName)
                     .withNamespace(resource.getMetadata().getNamespace())
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .withSubjects(new SubjectBuilder()
                         .withKind("ServiceAccount")
@@ -168,10 +153,10 @@ public class RbacUtils {
     /**
      * Reconciles the ClusterRole for the given custom resource.
      * This method ensures that the ClusterRole exists and is up-to-date based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the ClusterRole configuration.
      */
-    public void reconcileClusterRole(PaymentHubDeployment resource) {
+    public static void reconcileClusterRole(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String clusterRoleName = resource.getMetadata().getName() + "-clusterrole";
         log.info("Reconciling ClusterRole for resource: {}", resource.getMetadata().getName());
         ClusterRole clusterRole = createClusterRole(resource, clusterRoleName);
@@ -189,19 +174,12 @@ public class RbacUtils {
         }
     }
 
-    /**
-     * Creates a Kubernetes ClusterRole object based on the custom resource specifications.
-     * 
-     * @param resource The custom resource specifying the ClusterRole configuration.
-     * @param clusterRoleName The name to assign to the ClusterRole.
-     * @return The created ClusterRole object.
-     */
-    private ClusterRole createClusterRole(PaymentHubDeployment resource, String clusterRoleName) {
+    private static ClusterRole createClusterRole(PaymentHubDeployment resource, String clusterRoleName) {
         log.debug("Creating ClusterRole spec for resource: {}", resource.getMetadata().getName());
         return new ClusterRoleBuilder()
                 .withNewMetadata()
                     .withName(clusterRoleName)
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .addNewRule()
                     .withApiGroups("")
@@ -219,10 +197,10 @@ public class RbacUtils {
     /**
      * Reconciles the ClusterRoleBinding for the given custom resource.
      * This method ensures that the ClusterRoleBinding exists and is up-to-date based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the ClusterRoleBinding configuration.
      */
-    public void reconcileClusterRoleBinding(PaymentHubDeployment resource) {
+    public static void reconcileClusterRoleBinding(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String clusterRoleBindingName = resource.getMetadata().getName() + "-clusterrolebinding";
         log.info("Reconciling ClusterRoleBinding for resource: {}", resource.getMetadata().getName());
         ClusterRoleBinding clusterRoleBinding = createClusterRoleBinding(resource, clusterRoleBindingName);
@@ -240,19 +218,12 @@ public class RbacUtils {
         }
     }
 
-    /**
-     * Creates a Kubernetes ClusterRoleBinding object based on the custom resource specifications.
-     * 
-     * @param resource The custom resource specifying the ClusterRoleBinding configuration.
-     * @param clusterRoleBindingName The name to assign to the ClusterRoleBinding.
-     * @return The created ClusterRoleBinding object.
-     */
-    private ClusterRoleBinding createClusterRoleBinding(PaymentHubDeployment resource, String clusterRoleBindingName) {
+    private static ClusterRoleBinding createClusterRoleBinding(PaymentHubDeployment resource, String clusterRoleBindingName) {
         log.debug("Creating ClusterRoleBinding spec for resource: {}", resource.getMetadata().getName());
         return new ClusterRoleBindingBuilder()
                 .withNewMetadata()
                     .withName(clusterRoleBindingName)
-                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                    .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                 .endMetadata()
                 .withSubjects(new SubjectBuilder()
                         .withKind("ServiceAccount")

@@ -234,7 +234,7 @@ public class ReconcileSteps {
         PaymentHubDeployment cr = crRegistry.get(name);
         assertThat(cr).as("CR %s should be in registry", name).isNotNull();
         assertThat(cr.getStatus()).as("status for %s", name).isNotNull();
-        assertThat(cr.getStatus().isReady()).as("status.ready for %s", name).isTrue();
+        assertThat(cr.getStatus().getReady()).as("status.ready for %s", name).isTrue();
     }
 
     @Then("the Deployment {string} should reach {int}\\/{int} ready within {int} seconds")

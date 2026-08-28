@@ -1,37 +1,48 @@
 package com.paymenthub.utils;
 
-import io.fabric8.kubernetes.api.model.*;
-import io.fabric8.kubernetes.api.model.networking.v1.*;
+import io.fabric8.kubernetes.api.model.IntOrString;
+import io.fabric8.kubernetes.api.model.Service;
+import io.fabric8.kubernetes.api.model.ServiceBuilder;
+import io.fabric8.kubernetes.api.model.ServicePort;
+import io.fabric8.kubernetes.api.model.ServicePortBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRule;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRuleBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressTLS;
+import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressPathBuilder;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.Resource;
 
 import com.paymenthub.customresource.PaymentHubDeployment;
 import com.paymenthub.customresource.PaymentHubDeploymentSpec;
-import com.paymenthub.utils.OwnerReferenceUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class NetworkingUtils {
 
-    private final KubernetesClient kubernetesClient;
     private static final Logger log = LoggerFactory.getLogger(NetworkingUtils.class);
 
-    public NetworkingUtils(KubernetesClient kubernetesClient) {
-        this.kubernetesClient = kubernetesClient;
+    private NetworkingUtils() {
     }
 
     /**
      * Reconciles the Services for the given custom resource.
      * This includes creating, updating, or deleting services as necessary.
-     * 
+     *
      * @param resource The custom resource specifying the service configuration.
      */
-    public void reconcileServices(PaymentHubDeployment resource) {
+    public static void reconcileServices(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         log.info("Reconciling Services for resource: {}", resource.getMetadata().getName());
 
         List<Service> desiredServices = createServices(resource);
@@ -75,21 +86,20 @@ public class NetworkingUtils {
     }
 
     // Helper method to compare services based on significant fields
-    private boolean areServicesEqual(Service existingService, Service desiredService) {
+    private static boolean areServicesEqual(Service existingService, Service desiredService) {
         // Compare important fields such as spec, ports, selectors, etc.
         return Objects.equals(existingService.getSpec().getPorts(), desiredService.getSpec().getPorts())
                 && Objects.equals(existingService.getSpec().getSelector(), desiredService.getSpec().getSelector())
                 && Objects.equals(existingService.getSpec().getType(), desiredService.getSpec().getType());
     }
 
-
     /**
      * Creates a list of Kubernetes Service objects based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the service configuration.
      * @return A list of created Service objects.
      */
-    private List<Service> createServices(PaymentHubDeployment resource) {
+    private static List<Service> createServices(PaymentHubDeployment resource) {
         log.info("Creating Services spec for resource: {}", resource.getMetadata().getName());
 
         PaymentHubDeploymentSpec spec = resource.getSpec();
@@ -109,13 +119,13 @@ public class NetworkingUtils {
                                     .build())
                             .collect(Collectors.toList());
 
+                    // Copy defensively — serviceSpec.getLabels() is the live map on the
+                    // CR spec and must never be mutated in place.
                     Map<String, String> labels = serviceSpec.getLabels();
-                    if (labels == null) {
-                        labels = new HashMap<>();  
-                    }
+                    labels = labels == null ? new HashMap<>() : new HashMap<>(labels);
 
                     labels.putIfAbsent("app", resource.getMetadata().getName());
-                    labels.putIfAbsent("app.kubernetes.io/managed-by", "ph-ee-operator");
+                    labels.putIfAbsent("app.kubernetes.io/managed-by", "paymenthub-operator");
 
                     return new ServiceBuilder()
                             .withNewMetadata()
@@ -123,7 +133,7 @@ public class NetworkingUtils {
                                 .withNamespace(resource.getMetadata().getNamespace())
                                 .withLabels(labels)
                                 .withAnnotations(serviceSpec.getAnnotations())
-                                .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource)) 
+                                .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
                             .endMetadata()
                             .withNewSpec()
                                 .withSelector(serviceSpec.getSelector() != null ? serviceSpec.getSelector() :
@@ -140,10 +150,10 @@ public class NetworkingUtils {
     /**
      * Reconciles the Ingress for the given custom resource.
      * This includes creating or updating the Ingress as necessary.
-     * 
+     *
      * @param resource The custom resource specifying the Ingress configuration.
      */
-    public void reconcileIngress(PaymentHubDeployment resource) {
+    public static void reconcileIngress(KubernetesClient kubernetesClient, PaymentHubDeployment resource) {
         String ingressName = resource.getMetadata().getName();
         log.info("Reconciling Ingress for resource: {}", resource.getMetadata().getName());
 
@@ -165,12 +175,12 @@ public class NetworkingUtils {
 
     /**
      * Creates a Kubernetes Ingress object based on the custom resource specifications.
-     * 
+     *
      * @param resource The custom resource specifying the Ingress configuration.
      * @param ingressName The name of the Ingress to be created or updated.
      * @return The created Ingress object.
      */
-    private Ingress createIngress(PaymentHubDeployment resource, String ingressName) {
+    private static Ingress createIngress(PaymentHubDeployment resource, String ingressName) {
         log.info("Creating Ingress spec for resource: {}", resource.getMetadata().getName());
 
         PaymentHubDeploymentSpec.Ingress ingressSpec = resource.getSpec().getIngress();
@@ -192,7 +202,7 @@ public class NetworkingUtils {
                 .map(rule -> new IngressRuleBuilder()
                         .withHost(rule.getHost())
                         .withNewHttp()
-                            .addAllToPaths(rule.getPaths().stream().map(customPath -> 
+                            .addAllToPaths(rule.getPaths().stream().map(customPath ->
                                 new HTTPIngressPathBuilder()
                                     .withPath(customPath.getPath())
                                     .withPathType(customPath.getPathType())
@@ -210,14 +220,14 @@ public class NetworkingUtils {
                         .build()
                 ).collect(Collectors.toList());
 
+        // Copy defensively — ingressSpec.getLabels() is the live map on the CR spec
+        // and must never be mutated in place.
         Map<String, String> labels = ingressSpec.getLabels();
-        if (labels == null) {
-            labels = new HashMap<>();
-        }
+        labels = labels == null ? new HashMap<>() : new HashMap<>(labels);
 
         // Add default labels if they are not provided in the CR
         labels.putIfAbsent("app", resource.getMetadata().getName());
-        labels.putIfAbsent("app.kubernetes.io/managed-by", "ph-ee-operator");
+        labels.putIfAbsent("app.kubernetes.io/managed-by", "paymenthub-operator");
 
         return new IngressBuilder()
                 .withNewMetadata()

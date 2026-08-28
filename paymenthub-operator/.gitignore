@@ -1,4 +1,4 @@
 .gradle/
 build/
 target/
-ph-ee-operator.tar
+paymenthub-operator.tar

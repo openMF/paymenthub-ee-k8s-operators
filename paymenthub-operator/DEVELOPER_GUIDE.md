@@ -171,7 +171,7 @@ The `RbacUtils.java` file is a utility class that provides methods for managing 
 
 ### ResourceUtils.java
 
-The `ResourceUtils.java` file is a utility class that provides methods for managing `ConfigMaps`, `Secrets`, and `PersistentVolumeClaims` (PVCs) associated with the `PaymentHubDeployment` custom resource. The `createConfigMap` method sets up a `ConfigMap` that can store configuration data for the custom resource, the `createSecret` method handles sensitive data such as passwords and API keys (base64-encoded), and the `createPvc` method sets up a `PersistentVolumeClaim` to manage storage requirements.
+The `ResourceUtils.java` file is a utility class that provides methods for managing `ConfigMaps` and `Secrets` associated with the `PaymentHubDeployment` custom resource. The `createConfigMap` method sets up a `ConfigMap` with a base `configuration.properties` entry plus any extra literal key/value pairs declared in `spec.configMapData`. The `createSecret` method builds a `Secret` from `spec.secretData` (plaintext key/value pairs written via `Secret.stringData`, so the API server handles base64 encoding), falling back to a single `database-password` key for CRs that don't declare `secretData`. Neither method special-cases any component by name — all per-component data comes from the CR's own spec.
 
 ### StatusUpdateUtil.java
 
