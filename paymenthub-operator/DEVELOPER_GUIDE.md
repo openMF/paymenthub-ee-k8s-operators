@@ -11,7 +11,7 @@
 ### Explanation of Files
 1. [Deployment files](#deployment-files)
    - [ph-ee-CustomResourceDefinition.yaml](#ph-ee-customresourcedefinitionyaml)
-   - [operator_deployment_manifests.yaml](#operator_deployment_manifestsyaml)
+   - [operator_rbac.yaml and the operator Deployment](#operator_rbacyaml-and-the-operator-deployment)
 2. [Custom Resource Files](#custom-resource-files)
    - [PaymentHubDeployment.java](#paymenthubdeploymentjava)
    - [PaymentHubDeploymentSpec.java](#paymenthubdeploymentspecjava)
@@ -67,7 +67,7 @@ To start making changes to the PHEE Operator, it's crucial to understand several
 
 ## Deployment files
 
-> **Note:** These files live in [mifos-gazelle](https://github.com/openMF/mifos-gazelle) under `src/deployer/operators/phee/`, not in this repo. The descriptions below explain their structure and purpose for developers who need to understand or modify them. Do not duplicate them here — keeping a second copy creates sync drift.
+> **Note:** These files live in [mifos-gazelle](https://github.com/openMF/mifos-gazelle) under `src/deployer/operators/paymenthub/`, not in this repo. The descriptions below explain their structure and purpose for developers who need to understand or modify them. Do not duplicate them here — keeping a second copy creates sync drift.
 
 ### ph-ee-CustomResourceDefinition.yaml
 
@@ -115,9 +115,11 @@ Our CRD for the operator contains all the fields that our controller file might 
 
 **Status** provides information about the state of the custom resource. It includes fields such as `availableReplicas`, `errorMessage`, `lastAppliedImage`, and `ready`. This section is used to track the current state and health of the resource, making it easier to monitor and manage its lifecycle.
 
-### operator_deployment_manifests.yaml
+### operator_rbac.yaml and the operator Deployment
 
-This YAML file defines several Kubernetes resources essential for deploying and managing the PHEE Operator. It starts with a `ServiceAccount`, which is used by the operator to interact with the Kubernetes API. The `Deployment` specifies how the operator should be deployed, including the Docker image to use, resource requests and limits, environment variables, and the service account to associate with it. The `ClusterRole` and `ClusterRoleBinding` provide the operator with the necessary permissions to access and manage various Kubernetes resources across the cluster. The `Role` and `RoleBinding` are used to grant specific permissions within the `default` namespace, ensuring the operator can manage resources like custom resources, their statuses, and associated roles. Overall, this file configures the operator's runtime environment, access controls, and permissions, ensuring it operates correctly and securely within the Kubernetes cluster. Two very important configurations to notice in this file are the image name and the `apigroups` in `ClusterRole`.
+`operator_rbac.yaml` (a static, checked-in file) defines the `ServiceAccount`, `ClusterRole`/`ClusterRoleBinding`, and `Role`/`RoleBinding` the operator itself runs as — these grant it permission to manage Deployments, Services, Ingresses, ConfigMaps, Secrets, RBAC objects, and `PaymentHubDeployment` CRs/statuses across the cluster. A very important thing to check here is the `apiGroups`/`resources` list in the `ClusterRole` — a new resource type the operator needs to manage must be added here or reconciliation will fail with a 403.
+
+The operator's own `Deployment` is **not** a static file — `paymenthub.sh`'s `write_operator_deployment_image()` function generates it dynamically (image name comes from `config.ini`'s `PH_OPERATOR_IMAGE`) and applies it directly. For local development, `localdev.py` patches this already-applied Deployment in place to run from a local build instead (see the operator README's "Local Development" section) — there's no separate manifest file to hand-edit for either mode.
 
 ## Custom Resource Files
 
@@ -159,7 +161,7 @@ The `LoggingUtil.java` file is a utility class designed to facilitate consistent
 
 ### NetworkingUtils.java
 
-The `NetworkingUtils.java` file is a utility class that provides methods for managing Kubernetes networking resources — specifically `Service` and `Ingress` resources — associated with the `PaymentHubDeployment` custom resource. It includes methods to create, update, or delete these resources based on the custom resource's specifications. The `createService` method sets up a `Service` that exposes the custom resource's pods on a specified port, while the `createIngress` method configures an `Ingress` resource to manage external access to the service.
+The `NetworkingUtils.java` file is a utility class that provides methods for managing Kubernetes networking resources — specifically `Service` and `Ingress` resources — associated with the `PaymentHubDeployment` custom resource. It includes methods to create, update, or delete these resources based on the custom resource's specifications. The `createServices` method builds one `Service` per entry in `spec.services`, while the `createIngress` method configures an `Ingress` resource to manage external access.
 
 ### OwnerReferenceUtils.java
 

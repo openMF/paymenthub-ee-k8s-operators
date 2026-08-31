@@ -70,16 +70,16 @@ The operator comprises several key components:
 
 ### Custom Resource Definition (CRD)
 
-- **Authoritative location**: `mifos-gazelle/src/deployer/operators/phee/config/crd/ph-ee-CustomResourceDefinition.yaml`
+- **Authoritative location**: `mifos-gazelle/src/deployer/operators/paymenthub/config/crd/ph-ee-CustomResourceDefinition.yaml`
 - **API group / version**: `gazelle.mifos.io / v1`
 
 The CRD defines the schema and structure for all `PaymentHubDeployment` custom resources managed by the operator. It specifies the fields in `spec` (desired state) and `status` (observed state), including validation rules.
 
 ### Custom Resource (CR)
 
-- **Authoritative location**: `mifos-gazelle/src/deployer/operators/phee/config/cr/` (one file per component, 19 total)
+- **Authoritative location**: `mifos-gazelle/src/deployer/operators/paymenthub/config/cr/` (one file per component, 19 total)
 
-Each CR is an instance of the CRD representing the desired state of one PHEE component. CRs are applied to the cluster by mifos-gazelle during `phee.sh` deployment. Do not duplicate CR files in this repo — keeping a second copy creates sync drift.
+Each CR is an instance of the CRD representing the desired state of one PHEE component. CRs are applied to the cluster by mifos-gazelle during `paymenthub.sh` deployment. Do not duplicate CR files in this repo — keeping a second copy creates sync drift.
 
 ### OperatorMain
 
@@ -125,7 +125,9 @@ Handles graceful deletion, including cluster-scoped RBAC cleanup that owner refe
 
 Deployment is fully managed by mifos-gazelle. See [README.md](README.md) for build and deploy instructions.
 
-The mifos-gazelle `phee.sh` script applies the CRD, RBAC, and operator Deployment, then applies all 19 per-component CRs. The operator starts reconciling immediately once the CRs are applied.
+The mifos-gazelle `paymenthub.sh` script applies the CRD, RBAC, and operator Deployment, then applies all 19 per-component CRs. The operator starts reconciling immediately once the CRs are applied.
+
+For local iteration on operator code, mifos-gazelle's `localdev.py` patches the already-deployed operator Deployment to run from a local build instead — see the README's "Local Development" section.
 
 ## Design Decisions
 
