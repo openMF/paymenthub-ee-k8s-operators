@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Build a local Docker image and load it into the k3s containerd runtime.
-# Does not push to any registry. Docker Hub credentials are not required.
+# Build the paymenthub-operator jar and image, then load it into the local
+# k3s (or Colima) cluster for dev/test. Does not push to any registry.
 # Usage: ./build-local-image.sh [-t]   (-t runs tests before building; skipped by default)
+#
+# The image build + cluster import is delegated to mifos-gazelle's
+# build-and-import-image.sh so this repo doesn't carry its own copy of
+# "build with buildx, detect arch, load into k3s/Colima". Set GAZELLE_DIR if
+# mifos-gazelle isn't checked out as a sibling of this repo.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GAZELLE_DIR="${GAZELLE_DIR:-$SCRIPT_DIR/../../mifos-gazelle}"
+BUILD_SCRIPT="$GAZELLE_DIR/src/utils/build-and-import-image.sh"
 
 RUN_TESTS=false
 while getopts "t" opt; do
@@ -12,23 +21,14 @@ while getopts "t" opt; do
     esac
 done
 
-# Detect CPU architecture
-case "$(uname -m)" in
-    x86_64)        ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) echo "Unsupported architecture: $(uname -m)"; exit 1 ;;
-esac
+[[ -x "$BUILD_SCRIPT" ]] || {
+    echo "ERROR: mifos-gazelle's build-and-import-image.sh not found at $BUILD_SCRIPT" >&2
+    echo "Check out mifos-gazelle as a sibling of this repo, or set GAZELLE_DIR to point at your checkout." >&2
+    exit 1
+}
 
-# Detect k3s platform: Colima (macOS) or native Linux
-if command -v colima &>/dev/null && colima status 2>/dev/null | grep -q "running"; then
-    PLATFORM="mac"
-else
-    PLATFORM="linux"
-fi
-
-IMAGE="paymenthub-operator:local"
-
-echo "==> Platform: ${PLATFORM}, arch: linux/${ARCH}"
+IMAGE="paymenthub-operator"
+TAG="local"
 
 echo "==> Building jar (tests $([ "$RUN_TESTS" = true ] && echo enabled || echo skipped))..."
 if [ "$RUN_TESTS" = true ]; then
@@ -37,17 +37,10 @@ else
     ./gradlew build -x test
 fi
 
-echo "==> Building Docker image ${IMAGE} for linux/${ARCH}..."
-docker build --platform "linux/${ARCH}" -t "${IMAGE}" .
-
-echo "==> Loading ${IMAGE} into k3s containerd..."
-if [ "${PLATFORM}" = "mac" ]; then
-    docker save "${IMAGE}" | colima ssh -- sudo k3s ctr images import -
-else
-    docker save "${IMAGE}" | sudo k3s ctr images import -
-fi
+echo "==> Building and importing ${IMAGE}:${TAG} via $BUILD_SCRIPT"
+"$BUILD_SCRIPT" -n "$IMAGE" -t "$TAG" -c "$SCRIPT_DIR"
 
 echo ""
 echo "==> Done. Use in a pod/deployment spec:"
-echo "      image: ${IMAGE}"
+echo "      image: ${IMAGE}:${TAG}"
 echo "      imagePullPolicy: Never"
