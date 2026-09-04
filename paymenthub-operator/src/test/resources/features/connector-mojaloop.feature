@@ -6,29 +6,29 @@ Feature: Mojaloop Connector reconciliation
     And the paymenthub namespace exists
 
   Scenario: Enabled connector-mojaloop creates Deployment and Service
-    Given a PaymentHubDeployment CR named "ph-ee-connector-mojaloop-java" with:
-      | image    | docker.io/openmf/ph-ee-connector-mojaloop-java:mifos-v2.0.0 |
-      | replicas | 1                                                            |
-      | enabled  | true                                                         |
-    When the operator reconciles the CR "ph-ee-connector-mojaloop-java"
-    Then a Deployment "ph-ee-connector-mojaloop-java" should exist in namespace "paymenthub"
-    And the Deployment container image is "docker.io/openmf/ph-ee-connector-mojaloop-java:mifos-v2.0.0"
-    And a Service "ph-ee-connector-mojaloop-java" should exist in namespace "paymenthub"
+    Given a PaymentHubDeployment CR named "paymenthub-ee-connector-mojaloop" with:
+      | image    | docker.io/openmf/paymenthub-ee-connector-mojaloop:mifos-v2.0.0 |
+      | replicas | 1                                                              |
+      | enabled  | true                                                           |
+    When the operator reconciles the CR "paymenthub-ee-connector-mojaloop"
+    Then a Deployment "paymenthub-ee-connector-mojaloop" should exist in namespace "paymenthub"
+    And the Deployment container image is "docker.io/openmf/paymenthub-ee-connector-mojaloop:mifos-v2.0.0"
+    And a Service "paymenthub-ee-connector-mojaloop" should exist in namespace "paymenthub"
 
   Scenario: Disabled connector-mojaloop removes Deployment and Service
-    Given a Deployment "ph-ee-connector-mojaloop-java" already exists in namespace "paymenthub"
-    And a PaymentHubDeployment CR named "ph-ee-connector-mojaloop-java" with enabled false
-    When the operator reconciles the CR "ph-ee-connector-mojaloop-java"
-    Then the Deployment "ph-ee-connector-mojaloop-java" should not exist in namespace "paymenthub"
+    Given a Deployment "paymenthub-ee-connector-mojaloop" already exists in namespace "paymenthub"
+    And a PaymentHubDeployment CR named "paymenthub-ee-connector-mojaloop" with enabled false
+    When the operator reconciles the CR "paymenthub-ee-connector-mojaloop"
+    Then the Deployment "paymenthub-ee-connector-mojaloop" should not exist in namespace "paymenthub"
 
   Scenario: Connector-mojaloop CR status is updated to ready after reconciliation
-    Given a PaymentHubDeployment CR named "ph-ee-connector-mojaloop-java" with enabled true
-    When the operator reconciles the CR "ph-ee-connector-mojaloop-java"
-    Then the CR "ph-ee-connector-mojaloop-java" status.ready should be true
+    Given a PaymentHubDeployment CR named "paymenthub-ee-connector-mojaloop" with enabled true
+    When the operator reconciles the CR "paymenthub-ee-connector-mojaloop"
+    Then the CR "paymenthub-ee-connector-mojaloop" status.ready should be true
 
   @integration
   Scenario: Connector-mojaloop deployment is schedulable on the cluster
     Given the phee-infra helm chart is deployed
-    And a PaymentHubDeployment CR named "ph-ee-connector-mojaloop-java" with enabled true
-    When the operator reconciles the CR "ph-ee-connector-mojaloop-java"
-    Then the Deployment "ph-ee-connector-mojaloop-java" should reach 1/1 ready within 300 seconds
+    And a PaymentHubDeployment CR named "paymenthub-ee-connector-mojaloop" with enabled true
+    When the operator reconciles the CR "paymenthub-ee-connector-mojaloop"
+    Then the Deployment "paymenthub-ee-connector-mojaloop" should reach 1/1 ready within 300 seconds

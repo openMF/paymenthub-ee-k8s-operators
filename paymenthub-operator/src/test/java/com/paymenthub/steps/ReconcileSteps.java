@@ -298,24 +298,24 @@ public class ReconcileSteps {
 
         // Component-specific env vars and flags
         switch (name) {
-            case "ph-ee-zeebe-ops":
+            case "paymenthub-ee-zeebe-ops":
                 envs.add(envVar("ELASTICSEARCH_URL", "http://infra-elasticsearch.infra.svc.cluster.local:9200/"));
                 break;
-            case "ph-ee-importer-rdbms":
+            case "paymenthub-ee-importer-rdbms":
                 envs.clear();
                 envs.add(envVar("SPRING_PROFILES_ACTIVE", "local,tenantsConnection"));
                 break;
-            case "ph-ee-connector-bulk":
+            case "paymenthub-ee-connector-bulk":
                 envs.add(envVar("CLOUD_AWS_S3BASEURL", "http://minio:9000"));
                 break;
-            case "ph-ee-bulk-processor":
+            case "paymenthub-ee-bulk-processor":
                 envs.add(envVar("TENANTS", "greenbank,bluebank"));
                 break;
-            case "ph-ee-identity-account-mapper":
+            case "paymenthub-ee-account-mapper":
                 envs.add(envVar("SPRING_DATASOURCE_URL",
                     "jdbc:mysql://operationsmysql:3306/identity_account_mapper"));
                 break;
-            case "ph-ee-operations-app":
+            case "paymenthub-ee-bff":
                 spec.setInitContainerEnabled(true);
                 break;
             default:
