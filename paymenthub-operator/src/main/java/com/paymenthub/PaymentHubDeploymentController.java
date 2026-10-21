@@ -5,6 +5,7 @@ import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.ContainerPortBuilder;
 import io.fabric8.kubernetes.api.model.EmptyDirVolumeSource;
+import io.fabric8.kubernetes.api.model.HostPathVolumeSourceBuilder;
 import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
@@ -56,16 +57,32 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
     private static final String CURL_INIT_IMAGE = "curlimages/curl:8.7.1";
     private static final String WAIT_DB_IMAGE   = "busybox:1.36";
 
+    static final String LOCALDEV_ENABLED_ENV    = "LOCALDEV_ENABLED";
+    static final String LOCALDEV_ANNOTATION     = "paymenthub.mifos.org/local-dev";
+    static final String LOCALDEV_VOLUME         = "local-code";
+    static final String LOCALDEV_DEFAULT_IMAGE  = "eclipse-temurin:21";
+    static final String LOCALDEV_DEFAULT_MOUNT  = "/app";
+
     private static final Logger log = LoggerFactory.getLogger(PaymentHubDeploymentController.class);
     private final KubernetesClient kubernetesClient;
+    private final boolean localDevAllowed;
 
     /**
      * Constructor for initializing the PaymentHubDeploymentController with the necessary Kubernetes client.
+     * {@code spec.localDev} is honoured only when the operator runs with {@code LOCALDEV_ENABLED=true}.
      *
      * @param kubernetesClient The Kubernetes client used for interacting with the Kubernetes API server.
      */
     public PaymentHubDeploymentController(KubernetesClient kubernetesClient) {
+        this(kubernetesClient, Boolean.parseBoolean(System.getenv(LOCALDEV_ENABLED_ENV)));
+    }
+
+    public PaymentHubDeploymentController(KubernetesClient kubernetesClient, boolean localDevAllowed) {
         this.kubernetesClient = kubernetesClient;
+        this.localDevAllowed = localDevAllowed;
+        if (localDevAllowed) {
+            log.warn("{}=true: spec.localDev is honoured and may mount host directories. Local clusters only.", LOCALDEV_ENABLED_ENV);
+        }
     }
 
     /**
@@ -209,10 +226,12 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         Map<String, String> selectorLabels = new HashMap<>();
         selectorLabels.put("app", resource.getMetadata().getName());
 
+        PaymentHubDeploymentSpec.LocalDev localDev = activeLocalDev(resource);
+
         // Build the main container with environment variables, resources, and volume mounts
         ContainerBuilder containerBuilder = new ContainerBuilder()
             .withName(resource.getMetadata().getName())
-            .withImage(resource.getSpec().getImage())
+            .withImage(localDev == null ? resource.getSpec().getImage() : localDevImage(resource, localDev))
             .withEnv(DeploymentUtils.createEnvironmentVariables(resource))
             .withResources(DeploymentUtils.createResourceRequirements(resource))
             .withLivenessProbe(DeploymentUtils.createProbe(resource, "liveness"))
@@ -265,6 +284,16 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             containerBuilder.addToVolumeMounts(new VolumeMountBuilder()
                 .withName("tls-volume")
                 .withMountPath("/tls")
+                .build());
+        }
+
+        if (localDev != null) {
+            if (hasText(localDev.getJarPath())) {
+                containerBuilder.withCommand("java", "-jar", localDev.getJarPath());
+            }
+            containerBuilder.addToVolumeMounts(new VolumeMountBuilder()
+                .withName(LOCALDEV_VOLUME)
+                .withMountPath(hasText(localDev.getMountPath()) ? localDev.getMountPath() : LOCALDEV_DEFAULT_MOUNT)
                 .build());
         }
 
@@ -339,6 +368,16 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
                 .build());
         }
 
+        if (localDev != null) {
+            volumes.add(new VolumeBuilder()
+                .withName(LOCALDEV_VOLUME)
+                .withHostPath(new HostPathVolumeSourceBuilder()
+                    .withPath(localDev.getHostPath())
+                    .withType("Directory")
+                    .build())
+                .build());
+        }
+
         if (!volumes.isEmpty()) {
             podSpecBuilder.withVolumes(volumes);
         }
@@ -371,12 +410,15 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
         }
 
         // Create Deployment metadata with owner references
-        ObjectMeta metadata = new ObjectMetaBuilder()
+        ObjectMetaBuilder metadataBuilder = new ObjectMetaBuilder()
             .withName(name)
             .withNamespace(namespace)
             .withLabels(labels)
-            .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource))
-            .build();
+            .withOwnerReferences(OwnerReferenceUtils.createOwnerReferences(resource));
+        if (localDev != null) {
+            metadataBuilder.addToAnnotations(LOCALDEV_ANNOTATION, localDev.getHostPath());
+        }
+        ObjectMeta metadata = metadataBuilder.build();
 
         // Log the final deployment object for debugging purposes
         log.debug("Final Deployment object: {}", metadata);
@@ -386,6 +428,42 @@ public class PaymentHubDeploymentController implements Reconciler<PaymentHubDepl
             .withMetadata(metadata)
             .withSpec(deploymentSpec)
             .build();
+    }
+
+    /**
+     * The CR's local-development settings when they apply: enabled in the CR, allowed by
+     * the operator, and naming a host path. Otherwise null, and the image is used as usual.
+     */
+    private PaymentHubDeploymentSpec.LocalDev activeLocalDev(PaymentHubDeployment resource) {
+        PaymentHubDeploymentSpec.LocalDev localDev = resource.getSpec().getLocalDev();
+        if (localDev == null || !Boolean.TRUE.equals(localDev.getEnabled())) {
+            return null;
+        }
+        String name = resource.getMetadata().getName();
+        if (!localDevAllowed) {
+            log.warn("CR {} sets spec.localDev but the operator runs without {}=true; ignoring it and using image {}.",
+                name, LOCALDEV_ENABLED_ENV, resource.getSpec().getImage());
+            return null;
+        }
+        if (!hasText(localDev.getHostPath())) {
+            log.warn("CR {} enables spec.localDev without a hostPath; ignoring it and using image {}.",
+                name, resource.getSpec().getImage());
+            return null;
+        }
+        log.info("CR {} runs from local directory {} ({}).", name, localDev.getHostPath(),
+            hasText(localDev.getJarPath()) ? "java -jar " + localDev.getJarPath() : "mounted over the image");
+        return localDev;
+    }
+
+    private static String localDevImage(PaymentHubDeployment resource, PaymentHubDeploymentSpec.LocalDev localDev) {
+        if (hasText(localDev.getImage())) {
+            return localDev.getImage();
+        }
+        return hasText(localDev.getJarPath()) ? LOCALDEV_DEFAULT_IMAGE : resource.getSpec().getImage();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
 }

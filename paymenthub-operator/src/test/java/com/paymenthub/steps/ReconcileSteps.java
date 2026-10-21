@@ -131,6 +131,32 @@ public class ReconcileSteps {
         });
     }
 
+    // -------------------------------------------------------------------------
+    // Given — local development (spec.localDev)
+    // -------------------------------------------------------------------------
+
+    @Given("the operator runs with LOCALDEV_ENABLED {word}")
+    public void theOperatorLocalDevSwitch(String allowed) {
+        controller = new PaymentHubDeploymentController(client, Boolean.parseBoolean(allowed));
+    }
+
+    @Given("the CR {string} runs from local jar {string} in {string}")
+    public void theCrRunsFromLocalJar(String name, String jarPath, String hostPath) {
+        crRegistry.get(name).getSpec().setLocalDev(localDev(true, hostPath, jarPath));
+    }
+
+    @Given("the CR {string} mounts local directory {string} at {string}")
+    public void theCrMountsLocalDirectory(String name, String hostPath, String mountPath) {
+        PaymentHubDeploymentSpec.LocalDev localDev = localDev(true, hostPath, null);
+        localDev.setMountPath(mountPath);
+        crRegistry.get(name).getSpec().setLocalDev(localDev);
+    }
+
+    @Given("the CR {string} has local development turned off")
+    public void theCrLocalDevOff(String name) {
+        crRegistry.get(name).getSpec().setLocalDev(null);
+    }
+
     @Given("a Deployment {string} already exists in namespace {string}")
     public void aDeploymentAlreadyExists(String name, String namespace) {
         Deployment existing = new DeploymentBuilder()
@@ -253,6 +279,42 @@ public class ReconcileSteps {
         assertThat(envVar.get().getValue()).isEqualTo(expectedValue);
     }
 
+    @Then("the Deployment {string} runs {string} on image {string}")
+    public void deploymentRunsLocalJar(String name, String command, String image) {
+        Container c = mainContainer(name);
+        assertThat(c.getImage()).isEqualTo(image);
+        assertThat(String.join(" ", c.getCommand())).isEqualTo(command);
+    }
+
+    @Then("the Deployment {string} mounts host path {string} at {string}")
+    public void deploymentMountsHostPath(String name, String hostPath, String mountPath) {
+        Deployment d = client.apps().deployments().inNamespace(NAMESPACE).withName(name).get();
+        Volume volume = d.getSpec().getTemplate().getSpec().getVolumes().stream()
+            .filter(v -> v.getName().equals("local-code")).findFirst().orElseThrow();
+        assertThat(volume.getHostPath().getPath()).isEqualTo(hostPath);
+        assertThat(volume.getHostPath().getType()).isEqualTo("Directory");
+        assertThat(mainContainer(name).getVolumeMounts())
+            .anySatisfy(m -> {
+                assertThat(m.getName()).isEqualTo("local-code");
+                assertThat(m.getMountPath()).isEqualTo(mountPath);
+            });
+        assertThat(d.getMetadata().getAnnotations()).containsEntry("paymenthub.mifos.org/local-dev", hostPath);
+    }
+
+    @Then("the Deployment {string} runs its image with no local mount")
+    public void deploymentRunsImage(String name) {
+        Deployment d = client.apps().deployments().inNamespace(NAMESPACE).withName(name).get();
+        Container c = mainContainer(name);
+        assertThat(c.getImage()).isEqualTo(crRegistry.get(name).getSpec().getImage());
+        assertThat(c.getCommand()).isNullOrEmpty();
+        assertThat(c.getVolumeMounts()).noneMatch(m -> m.getName().equals("local-code"));
+        List<Volume> volumes = d.getSpec().getTemplate().getSpec().getVolumes();
+        assertThat(volumes == null ? List.<Volume>of() : volumes).noneMatch(v -> v.getName().equals("local-code"));
+        Map<String, String> annotations = d.getMetadata().getAnnotations();
+        assertThat(annotations == null ? Map.<String, String>of() : annotations)
+            .doesNotContainKey("paymenthub.mifos.org/local-dev");
+    }
+
     @Then("an init container exists on Deployment {string}")
     public void initContainerExists(String deploymentName) {
         Deployment d = client.apps().deployments().inNamespace(NAMESPACE).withName(deploymentName).get();
@@ -264,6 +326,20 @@ public class ReconcileSteps {
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private Container mainContainer(String deploymentName) {
+        Deployment d = client.apps().deployments().inNamespace(NAMESPACE).withName(deploymentName).get();
+        assertThat(d).as("Deployment %s", deploymentName).isNotNull();
+        return d.getSpec().getTemplate().getSpec().getContainers().get(0);
+    }
+
+    private PaymentHubDeploymentSpec.LocalDev localDev(boolean enabled, String hostPath, String jarPath) {
+        PaymentHubDeploymentSpec.LocalDev localDev = new PaymentHubDeploymentSpec.LocalDev();
+        localDev.setEnabled(enabled);
+        localDev.setHostPath(hostPath);
+        localDev.setJarPath(jarPath);
+        return localDev;
+    }
 
     private Optional<PaymentHubDeployment> lastCr() {
         return crRegistry.values().stream().reduce((a, b) -> b);

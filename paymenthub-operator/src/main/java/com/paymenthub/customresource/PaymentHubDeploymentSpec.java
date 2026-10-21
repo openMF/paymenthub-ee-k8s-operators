@@ -50,7 +50,34 @@ public class PaymentHubDeploymentSpec {
     // key when a CR doesn't set this.
     private Map<String, String> secretData;
 
+    // Local development only: run the component from a host directory instead of its
+    // image. Honoured only when the operator itself runs with LOCALDEV_ENABLED=true.
+    private LocalDev localDev;
+
     // Inner classes for nested objects
+    @Getter
+    @Setter
+    @ToString
+    @EqualsAndHashCode
+    @NoArgsConstructor
+    public static class LocalDev {
+        private Boolean enabled;
+
+        // Directory on the node (single-node clusters only) mounted into the container.
+        private String hostPath;
+
+        // Where hostPath is mounted; defaults to /app.
+        private String mountPath;
+
+        // Jar to run, as a path inside the container (e.g. /app/build/libs/app.jar).
+        // When set the container runs `java -jar <jarPath>` on a JDK image; when not set
+        // the image and command are kept and only the mount is added (static web apps).
+        private String jarPath;
+
+        // Image to use; defaults to eclipse-temurin:21 when jarPath is set, otherwise the spec image.
+        private String image;
+    }
+
     @Getter
     @Setter
     @ToString
