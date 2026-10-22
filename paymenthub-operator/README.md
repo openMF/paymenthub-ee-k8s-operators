@@ -43,7 +43,29 @@ cd ~/mifos-gazelle/src/utils/localdev
 ./localdev.py --restore --component paymenthub-operator
 ```
 
-This patches the operator's Deployment to run `java -jar` off a hostPath-mounted local build — the same k8s-direct mechanism `localdev.py` uses for every other PHEE component. Unlike those, nothing reconciles the operator's own Deployment, so there's no need to scale anything down first. See mifos-gazelle's [docs/LOCALDEV.md](https://github.com/openMF/mifos-gazelle/blob/dev/docs/LOCALDEV.md) for the full workflow.
+This patches the operator's Deployment to run `java -jar` off a hostPath-mounted local build. Nothing reconciles the operator's own Deployment, so the patch stays. See mifos-gazelle's [docs/LOCALDEV.md](https://github.com/openMF/mifos-gazelle/blob/dev/docs/LOCALDEV.md) for the full workflow.
+
+### Running a PHEE component from a local build (`spec.localDev`)
+
+The components the operator manages are switched to a local build through their CR, so reconciliation keeps the local build instead of reverting it:
+
+```yaml
+spec:
+  localDev:
+    enabled: true
+    hostPath: /home/dev/paymenthub-ee-connector-mojaloop   # directory on the node, mounted at mountPath
+    jarPath: /app/build/libs/app.jar                      # optional: run `java -jar` on this jar
+    # mountPath: /app                                     # default /app
+    # image: eclipse-temurin:21                           # default when jarPath is set; otherwise the spec image
+```
+
+- With `jarPath`, the container runs `java -jar <jarPath>` on `image`. Env vars, probes, ConfigMaps, Services and Ingress are unchanged.
+- Without `jarPath`, the image and command are kept and only the directory is mounted. That suits static web apps, for example a `dist/` folder mounted at `/usr/share/nginx/html`.
+- Removing `localDev`, or setting `enabled: false`, puts the component back on its image at the next reconcile.
+- The Deployment carries the annotation `paymenthub.mifos.org/local-dev: <hostPath>` while a local build is in use.
+- After rebuilding the jar, delete the pod so the new one picks it up. Don't use `kubectl rollout restart`, because the operator removes its annotation on the next reconcile and the pod restarts again.
+
+**Off by default.** The operator honours `spec.localDev` only when it runs with `LOCALDEV_ENABLED=true`. Otherwise it logs a warning and uses the image. hostPath only suits single-node local clusters, so production deployments should never set this variable. In mifos-gazelle, `localdev.py` sets the CR fields from `localdev.ini`.
 
 ## Building the Operator Image
 
